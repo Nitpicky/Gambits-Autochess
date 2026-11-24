@@ -21,4 +21,4 @@ Deterministic auto-battle. Input: two team specs (plain dicts) + seed. Output: r
 ## Recap
 - 2026-11-24: First version: gambits, AP/PP, reactions, 12 keywords, statuses, 33 item effects, relic flags, tokens.
 - 2026-11-24: Flat buffs only; no Defense (damage reduction %, dmg_bonus, pct_hp_damage flags); rules can carry two conditions (new conds: self_below/above, enemy_below, front/back row); unit rules override from the team spec; result reports kills and units standing.
-- 2026-11-24: Overtime after OVERTIME_TURN turns: heals x OVERTIME_HEAL_MULT, hits ignore damage reduction and grow +OVERTIME_DMG_STEP per overtime turn; 'overtime' log event.
+- 2026-11-24: Overtime once the fight clock (sum of GameConfig.EVENT_SECONDS per logged event) passes FIGHT_SECONDS: heals x OVERTIME_HEAL_MULT, hits ignore damage reduction and grow +OVERTIME_DMG_STEP per overtime turn; 'overtime' log event.

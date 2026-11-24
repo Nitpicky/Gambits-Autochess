@@ -17,6 +17,8 @@ var rng := RandomNumberGenerator.new()
 var units: Array[BattleUnit] = []
 var events_log: Array = []
 var turn: int = 0
+var clock: float = 0.0   ## fight time in playback seconds (same table the UI waits on)
+var _overtime: int = 0
 var _next_uid: int = 1
 var _react_depth: int = 0
 var side_flags: Array = [{}, {}]
@@ -228,14 +230,15 @@ func _winner() -> int:
 
 ## Overtime turns so far (0 = still within the fight timer).
 func overtime() -> int:
-	return maxi(0, turn - GameConfig.OVERTIME_TURN)
+	return _overtime
 
 
 func _play_turn() -> void:
 	turn += 1
 	log_event({"t": "turn", "n": turn})
-	if overtime() > 0:
-		log_event({"t": "overtime", "n": overtime()})
+	if clock >= GameConfig.FIGHT_SECONDS:
+		_overtime += 1
+		log_event({"t": "overtime", "n": _overtime})
 	for u in living():
 		u.acted_this_turn = false
 		u.emit(E.TURN_START, {"sim": self})
@@ -653,6 +656,7 @@ func move_to_back(u: BattleUnit) -> void:
 
 func log_event(ev: Dictionary) -> void:
 	events_log.append(ev)
+	clock += GameConfig.EVENT_SECONDS.get(ev.t, 0.0)
 
 
 func _unit_info(u: BattleUnit) -> Dictionary:

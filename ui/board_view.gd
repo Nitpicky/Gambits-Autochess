@@ -8,7 +8,7 @@ extends Control
 signal cell_pressed(side: int, row: int, col: int)
 signal cell_hovered(side: int, row: int, col: int)  ## side -1 = left the board
 signal finished
-signal fight_clock(turn: int, overtime: int)  ## for the fight timer bar
+signal fight_clock(seconds: float, overtime: int)  ## fight time elapsed (speed-1 seconds), for the timer bar
 signal narrate(text: String)  ## BBCode line describing the current action (shown at the top of the screen)
 
 const TILE := Vector2(165, 150)
@@ -29,7 +29,8 @@ var _flip := false
 var _names: Dictionary = {}    ## uid -> [name, side shown]
 var _actor = null              ## uid of the unit acting now
 var _line := ""
-var _overtime := 0                ## narrator line being built for the current action
+var _overtime := 0
+var _elapsed := 0.0                ## narrator line being built for the current action
 ## Drag and drop hooks, set by the screen: (side, row, col) -> drag data | null; (side, row, col, data) -> bool; -> void
 var drag_from_cell: Callable
 var can_drop_on_cell: Callable
@@ -220,6 +221,7 @@ func play(fight_log: Array, flip: bool) -> void:
 	selected = Vector3i(-1, -1, -1)
 	_names.clear()
 	_overtime = 0
+	_elapsed = 0.0
 	speed = 1.0
 	_actor = null
 	_line = ""
@@ -312,6 +314,15 @@ func _flash(uid, col: Color) -> void:
 	tw.tween_property(sv, "modulate", Color.WHITE, 0.35 / speed)
 
 
+## Playback time of an event at speed 1. The sim uses the same table for its fight clock,
+## so overtime starts when the fight timer runs out on screen.
+func _dur(ev: Dictionary) -> float:
+	var d: float = GameConfig.EVENT_SECONDS.get(ev.t, 0.0)
+	_elapsed += d
+	fight_clock.emit(_elapsed, _overtime)
+	return d
+
+
 func _apply(ev: Dictionary) -> float:
 	match ev.t:
 		"start":
@@ -319,15 +330,11 @@ func _apply(ev: Dictionary) -> float:
 				_spawn(u.uid, _info(u), true)
 				_names[u.uid] = [u.name, _side(u.side)]
 			_say("Fight!", true)
-			return 0.8
-		"turn":
-			fight_clock.emit(ev.n, _overtime)
-			return 0.0
+			return _dur(ev)
 		"overtime":
 			_overtime = ev.n
-			fight_clock.emit(GameConfig.OVERTIME_TURN + ev.n, ev.n)
 			_say("[color=#ff5a3c]OVERTIME %s[/color]  [color=#8a8da0]heals cut, hits ignore armour and grow[/color]" % ("!" if ev.n == 1 else "x%d" % ev.n), true)
-			return 0.5 if ev.n == 1 else 0.2
+			return _dur(ev)
 		"act":
 			if _overtime > 0:
 				speed = minf(GameConfig.OVERTIME_MAX_SPEED, speed * (1.0 + GameConfig.OVERTIME_SPEEDUP))
@@ -343,7 +350,7 @@ func _apply(ev: Dictionary) -> float:
 					var dx := 18.0 if nodes[ev.u].side == 0 else -18.0
 					tw.tween_property(r, "position:x", home.x + dx, 0.1 / speed)
 					tw.tween_property(r, "position:x", home.x, 0.15 / speed)
-			return 0.45
+			return _dur(ev)
 		"hit":
 			_bar(ev)
 			if nodes.has(ev.u):
@@ -353,27 +360,27 @@ func _apply(ev: Dictionary) -> float:
 			_float(ev.u, "-%d" % ev.amount, Color("ff6060"), ev.amount >= 20)
 			var why: String = ev.get("text", "")
 			_say("→ %s [color=#ff6060]−%d[/color]%s" % [_nm(ev.u), ev.amount, (" (%s)" % why) if why != "" else ""])
-			return 0.5
+			return _dur(ev)
 		"heal":
 			_bar(ev)
 			_strike_fx(ev.get("src"), ev.u, Color(0.45, 1, 0.45, 0.9))
 			_flash(ev.u, Color(0.5, 1, 0.5))
 			_float(ev.u, "+%d" % ev.amount, Color("70ff70"))
 			_say("→ %s [color=#70ff70]+%d[/color]" % [_nm(ev.u), ev.amount])
-			return 0.45
+			return _dur(ev)
 		"blocked":
 			_float(ev.u, ev.get("text", "Blocked"), Color("a0d8ff"))
 			_say("→ %s [color=#a0d8ff]%s[/color]" % [_nm(ev.u), ev.get("text", "Blocked")])
-			return 0.45
+			return _dur(ev)
 		"buff":
 			_bar(ev)
 			_float(ev.u, ev.get("text", ""), Color("f2c34a"))
 			_say("%s [color=#f2c34a]%s[/color]" % [_nm(ev.u), ev.get("text", "")])
-			return 0.3
+			return _dur(ev)
 		"status":
 			_float(ev.u, ev.status, Color("c8a8ff"))
 			_say("%s [color=#c8a8ff]%s[/color]" % [_nm(ev.u), ev.status])
-			return 0.25
+			return _dur(ev)
 		"death":
 			if nodes.has(ev.u):
 				nodes[ev.u].sprite.play(&"death", false)
@@ -383,12 +390,12 @@ func _apply(ev: Dictionary) -> float:
 				tw.tween_interval(0.3 / speed)
 				tw.tween_property(nodes[ev.u].root, "modulate:a", 0.0, 0.5 / speed)
 			_say("%s [color=#8a8da0]falls[/color]" % _nm(ev.u))
-			return 0.6
+			return _dur(ev)
 		"summon":
 			_spawn(ev.unit.uid, _info(ev.unit), true)
 			_names[ev.unit.uid] = [ev.unit.name, _side(ev.unit.side)]
 			_say("%s [color=#f2c34a]appears[/color]" % _nm(ev.unit.uid))
-			return 0.35
+			return _dur(ev)
 		"move":
 			if nodes.has(ev.u):
 				nodes[ev.u].row = ev.row
@@ -401,15 +408,15 @@ func _apply(ev: Dictionary) -> float:
 				else:
 					var tw := create_tween()
 					tw.tween_property(n.root, "position", foot - Vector2(95, 150) * s, 0.25 / speed)
-			return 0.3
+			return _dur(ev)
 		"cycle":
 			_say("[color=#8a8da0]Everyone recovers AP and PP[/color]", true)
-			return 0.5
+			return _dur(ev)
 		"end":
 			_actor = null
 			queue_redraw()
 			var w: int = ev.get("winner", -1)
 			var mine_won := w >= 0 and _side(w) == 0
 			_say("[color=#%s]%s[/color]" % ["f2c34a" if mine_won else ("e0566b" if w >= 0 else "c8c8d8"), "Won" if mine_won else ("Lost" if w >= 0 else "Draw")], true)
-			return 0.6
-	return 0.0
+			return _dur(ev)
+	return _dur(ev)

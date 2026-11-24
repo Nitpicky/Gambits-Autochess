@@ -97,9 +97,13 @@ const ZEALOT_ATK := 3      ## Attack per unspent PP
 # Battle
 const MAX_BATTLE_CYCLES := 30  ## AP/PP refill cycles: fights go on until a side is wiped; this is only a stalemate guard
 const MAX_BATTLE_TURNS := 200  ## stalemate guard only
-## Overtime: the fight timer is OVERTIME_TURN turns. After it, healing is cut and every hit ignores
-## damage reduction and grows by OVERTIME_DMG_STEP per overtime turn. Playback speeds up per action.
-const OVERTIME_TURN := 9  ## ~30% of fights reach overtime (measured on a bot game)
+## Fight timer: FIGHT_SECONDS of playback (speed 1). The sim keeps the same clock from EVENT_SECONDS.
+## Past it (from the next turn), healing is cut and every hit ignores damage reduction and grows by
+## OVERTIME_DMG_STEP per overtime turn. Playback speeds up per action.
+const FIGHT_SECONDS := 20.0
+## Playback seconds per battle log event (the UI waits this long; the sim's fight clock adds them up).
+const EVENT_SECONDS := {"start": 0.8, "act": 0.45, "hit": 0.5, "heal": 0.45, "blocked": 0.45, "buff": 0.3,
+	"status": 0.25, "death": 0.6, "summon": 0.35, "move": 0.3, "cycle": 0.5, "overtime": 0.3, "end": 0.6}
 const OVERTIME_HEAL_MULT := 0.25
 const OVERTIME_DMG_STEP := 0.3
 const OVERTIME_SPEEDUP := 0.08   ## playback speed +8% per action in overtime

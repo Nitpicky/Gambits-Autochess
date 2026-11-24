@@ -982,10 +982,10 @@ func _after_fight() -> void:
 	refresh()
 
 
-## During a fight the timer bar counts turns down to overtime, then turns red.
-func _on_fight_clock(turn: int, ot: int) -> void:
-	timer_bar.max_value = GameConfig.OVERTIME_TURN
-	timer_bar.value = maxf(0.0, GameConfig.OVERTIME_TURN - turn + 1) if ot == 0 else GameConfig.OVERTIME_TURN
+## During a fight the timer bar drains over FIGHT_SECONDS, then turns red (overtime).
+func _on_fight_clock(seconds: float, ot: int) -> void:
+	timer_bar.max_value = GameConfig.FIGHT_SECONDS
+	timer_bar.value = maxf(0.0, GameConfig.FIGHT_SECONDS - seconds) if ot == 0 else GameConfig.FIGHT_SECONDS
 	var fill := StyleBoxFlat.new()
 	fill.bg_color = Color("ff5a3c") if ot > 0 else Color("e8e8ee")
 	timer_bar.add_theme_stylebox_override("fill", fill)

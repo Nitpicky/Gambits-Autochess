@@ -4,8 +4,9 @@ extends Control
 ## Fixed width (WIDTH); the height grows with the unit's rules.
 ## Corners: Speed top-left (cyan), AP/PP top-right (burst / shield), Attack bottom-left (yellow),
 ## HP bottom-right (red). Rarity shape bottom middle. Factions down the left edge, archetypes down the right.
-## When `editable`, condition chips cycle through Describe.COND_PRESETS, rows can move up or be removed,
-## and + adds a rule. Every change emits rules_changed with the full rule list.
+## When `editable`: drag a rule row onto another to change priority, click a condition chip to pick
+## from Describe.COND_PRESETS, X removes a rule, + adds one for any of the unit's actions.
+## Every change emits rules_changed with the full rule list.
 
 signal rules_changed(rules: Array)
 
@@ -46,7 +47,7 @@ static func stats(d: Dictionary, u: Dictionary) -> Dictionary:
 			if s.has(k):
 				s[k] += it.stats[k]
 	for c in u.get("cards", []):
-		for k in ["hp", "atk", "ap", "pp"]:
+		for k in ["hp", "atk", "ap", "pp", "ini"]:
 			if c.has(k):
 				s[k] += c[k]
 	return s
@@ -146,15 +147,39 @@ func _bubble(k: StringName, c: Color, s: Vector2, pos: Vector2, t: String) -> vo
 	add_child(g)
 
 
+## The unit's actions (kit actions after its upgrade cards), or {} for units without a kit.
+func _actions() -> Dictionary:
+	return Kits.actions_for(def.id, inst.get("cards", []))
+
+
+func _action_name(g: Dictionary) -> String:
+	var acts := _actions()
+	if acts.has(g.action):
+		return acts[g.action].name
+	return Describe.ACTION_SHORT.get(g.action, String(g.action))
+
+
+func _action_tip(g: Dictionary) -> String:
+	var acts := _actions()
+	if acts.has(g.action):
+		var a: Dictionary = acts[g.action]
+		var cost := "%d %s" % [a.get("cost", 1), "AP" if a.kind == &"ap" else "PP"]
+		return "%s (%s)\n%s" % [a.name, cost, a.get("text", "")]
+	return Describe.gambit(g)
+
+
+## One row per rule: action (AP gold / PP blue) + cost pips, then two condition chips.
+## Drag a row onto another to change priority; click a chip to pick a condition from a list;
+## + opens the list of the unit's actions to add a rule.
 func _build_rules() -> void:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 3)
 	_body.add_child(box)
+	var acts := _actions()
 	for i in rules.size():
 		var g: Dictionary = rules[i]
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 3)
-		row.tooltip_text = Describe.gambit(g)
 		row.mouse_filter = Control.MOUSE_FILTER_PASS
 		var col := C_AP if g.kind == &"ap" else C_PP
 		var bgp := PanelContainer.new()
@@ -162,37 +187,89 @@ func _build_rules() -> void:
 		sb.bg_color = Color("252837")
 		sb.set_content_margin_all(3)
 		bgp.add_theme_stylebox_override("panel", sb)
+		bgp.tooltip_text = _action_tip(g)
+		bgp.mouse_filter = Control.MOUSE_FILTER_STOP
+		if editable:
+			bgp.mouse_default_cursor_shape = Control.CURSOR_DRAG
+			var idx := i
+			bgp.set_drag_forwarding(
+				func(_p): return _drag_row(idx, bgp),
+				func(_p, d): return d is Dictionary and d.get("type") == "rule_row",
+				func(_p, d): _move(d.idx, idx))
 		bgp.add_child(row)
 		box.add_child(bgp)
 		var act := Label.new()
-		act.text = Describe.ACTION_SHORT.get(g.action, String(g.action))
-		act.custom_minimum_size = Vector2(58, 0)
+		act.text = _action_name(g)
+		act.custom_minimum_size = Vector2(66, 0)
+		act.clip_text = true
 		act.add_theme_font_size_override("font_size", 11)
 		act.add_theme_color_override("font_color", col)
+		act.mouse_filter = Control.MOUSE_FILTER_PASS
 		row.add_child(act)
+		var cost: int = acts[g.action].get("cost", 1) if acts.has(g.action) else 1
+		var pips := HBoxContainer.new()
+		pips.add_theme_constant_override("separation", 1)
+		pips.custom_minimum_size = Vector2(14, 0)
+		pips.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		for k in cost:
+			var pip := Glyph.make(&"burst" if g.kind == &"ap" else &"shield", col, Vector2(7, 8))
+			pip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			pips.add_child(pip)
+		row.add_child(pips)
 		var conds := Describe.rule_conds(g)
 		for ci in 2:
-			var chip := Button.new()
+			var chip := MenuButton.new()
 			chip.text = Describe.cond_short(conds[ci][0], conds[ci][1])
-			chip.custom_minimum_size = Vector2(54, 0)
+			chip.custom_minimum_size = Vector2(52, 0)
 			chip.add_theme_font_size_override("font_size", 10)
+			chip.flat = false
 			chip.disabled = not editable
 			chip.focus_mode = Control.FOCUS_NONE
-			chip.pressed.connect(_cycle.bind(i, ci))
+			chip.mouse_filter = Control.MOUSE_FILTER_PASS  # a row dragged over the chip still drops on the row
+			var pm := chip.get_popup()
+			for k in Describe.COND_PRESETS.size():
+				var pr: Dictionary = Describe.COND_PRESETS[k]
+				pm.add_item(Describe.cond_long(pr.get("c", &""), pr.get("a", 0.0)), k)
+			pm.id_pressed.connect(_set_cond.bind(i, ci))
 			row.add_child(chip)
-		var pip := Glyph.make(&"circle", col, Vector2(8, 8))
-		pip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		row.add_child(pip)
 		if editable:
-			_tiny(row, &"up", _move_up.bind(i), i > 0)
 			_tiny(row, &"cross", _remove.bind(i), rules.size() > 1)
 	if editable:
-		var add := Button.new()
-		add.icon = null
+		var add := MenuButton.new()
 		add.text = "+"
+		add.flat = false
 		add.focus_mode = Control.FOCUS_NONE
-		add.pressed.connect(_add)
+		var pm := add.get_popup()
+		var choices := _addable()
+		for k in choices.size():
+			pm.add_item(choices[k].label, k)
+		pm.id_pressed.connect(func(k): _add(choices[k].rule))
 		box.add_child(add)
+
+
+## Actions the player can add a rule for: every kit action (or the unit's default rules).
+func _addable() -> Array:
+	var out: Array = []
+	var acts := _actions()
+	if not acts.is_empty():
+		for id in acts:
+			var a: Dictionary = acts[id]
+			out.append({"label": "%s (%s)" % [a.name, "AP" if a.kind == &"ap" else "PP"], "rule": Kits.rule_for(a)})
+	else:
+		var seen := {}
+		for g in def.gambits:
+			if not seen.has(g.action):
+				seen[g.action] = true
+				out.append({"label": "%s (%s)" % [Describe.ACTION_SHORT.get(g.action, String(g.action)), "AP" if g.kind == &"ap" else "PP"], "rule": g.duplicate()})
+	return out
+
+
+func _drag_row(i: int, src: Control):
+	var p := Label.new()
+	p.text = _action_name(rules[i])
+	p.add_theme_color_override("font_color", Color("f2c34a"))
+	src.set_drag_preview(p)
+	return {"type": "rule_row", "idx": i}
 
 
 func _tiny(row: HBoxContainer, k: StringName, cb: Callable, enabled: bool) -> void:
@@ -201,38 +278,36 @@ func _tiny(row: HBoxContainer, k: StringName, cb: Callable, enabled: bool) -> vo
 	b.flat = true
 	b.disabled = not enabled
 	b.focus_mode = Control.FOCUS_NONE
+	b.mouse_filter = Control.MOUSE_FILTER_PASS
 	b.pressed.connect(cb)
-	var g := Glyph.make(k, Color("c8c8d8") if enabled else Color("4e5163"), Vector2(14, 14))
-	g.position = Vector2(1, 1)
-	b.add_child(g)
+	var gl := Glyph.make(k, Color("c8c8d8") if enabled else Color("4e5163"), Vector2(14, 14))
+	gl.position = Vector2(1, 1)
+	b.add_child(gl)
 	row.add_child(b)
 
 
-func _cycle(i: int, ci: int) -> void:
+func _set_cond(preset_idx: int, i: int, ci: int) -> void:
 	var g: Dictionary = rules[i]
 	var key_c := "cond" if ci == 0 else "cond2"
 	var key_a := "arg" if ci == 0 else "arg2"
-	var cur := {"c": g.get(key_c, &""), "a": g.get(key_a, 0.0)}
-	var idx := -1
-	for k in Describe.COND_PRESETS.size():
-		var p: Dictionary = Describe.COND_PRESETS[k]
-		if p.get("c", &"") == cur.c and is_equal_approx(float(p.get("a", 0.0)), float(cur.a)):
-			idx = k
-	var nxt: Dictionary = Describe.COND_PRESETS[(idx + 1) % Describe.COND_PRESETS.size()]
 	g.erase(key_c)
 	g.erase(key_a)
 	if ci == 0:
 		g.erase("arg_kw")
+	var nxt: Dictionary = Describe.COND_PRESETS[preset_idx]
 	if nxt.has("c"):
 		g[key_c] = nxt.c
 		g[key_a] = nxt.get("a", 0.0)
 	_changed()
 
 
-func _move_up(i: int) -> void:
-	var t = rules[i]
-	rules[i] = rules[i - 1]
-	rules[i - 1] = t
+## Drag-and-drop reorder: the dragged rule takes the target row's place.
+func _move(from: int, to: int) -> void:
+	if from == to or from < 0 or from >= rules.size():
+		return
+	var r = rules[from]
+	rules.remove_at(from)
+	rules.insert(clampi(to, 0, rules.size()), r)
 	_changed()
 
 
@@ -241,9 +316,8 @@ func _remove(i: int) -> void:
 	_changed()
 
 
-func _add() -> void:
-	var base: Dictionary = UnitCatalog.ROLE_DEFAULT_GAMBIT[def.role].duplicate()
-	rules.insert(maxi(0, rules.size() - 1), base)
+func _add(rule: Dictionary) -> void:
+	rules.append(rule.duplicate(true))
 	_changed()
 
 

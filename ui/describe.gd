@@ -30,17 +30,40 @@ const ACTION_SHORT := {
 const COND_SHORT := {
 	&"": "—", &"ally_below": "Ally <%d%%", &"target_below": "Ally <%d%%", &"self_below": "Self <%d%%", &"self_above": "Self ≥%d%%",
 	&"enemy_below": "Foe <%d%%", &"front_row": "Front", &"back_row": "Back", &"ally_without": "No %s", &"can_sacrifice": "Fodder",
-	&"has_token": "Token",
+	&"has_token": "Token", &"enemy_has": "Foe %s", &"has_ap_left": "%d+ AP", &"token_died": "Totem dies", &"enemy_died": "Foe dies",
 }
-## Conditions a player can cycle through on a rule's condition chips.
+## Conditions a player can pick on a rule's condition chips.
 const COND_PRESETS := [
-	{}, {"c": &"ally_below", "a": 0.5}, {"c": &"ally_below", "a": 0.7}, {"c": &"self_below", "a": 0.5},
-	{"c": &"self_above", "a": 0.5}, {"c": &"enemy_below", "a": 0.3}, {"c": &"front_row"}, {"c": &"back_row"},
+	{}, {"c": &"ally_below", "a": 0.5}, {"c": &"ally_below", "a": 0.7}, {"c": &"target_below", "a": 0.5},
+	{"c": &"self_below", "a": 0.5}, {"c": &"self_above", "a": 0.5}, {"c": &"enemy_below", "a": 0.3},
+	{"c": &"enemy_has", "a": &"mark"}, {"c": &"front_row"}, {"c": &"back_row"}, {"c": &"has_ap_left", "a": 2},
 ]
+## Long labels for the condition picker list.
+const COND_LONG := {
+	&"": "Always", &"ally_below": "An ally is below %d%%", &"target_below": "That ally is below %d%% (reactions)",
+	&"self_below": "Itself below %d%%", &"self_above": "Itself at %d%% or more", &"enemy_below": "An enemy is below %d%%",
+	&"enemy_has": "An enemy is %s", &"front_row": "It stands in the front row", &"back_row": "It stands in the back row",
+	&"has_ap_left": "It has %d+ AP left",
+}
+
+
+static func cond_long(c: StringName, arg) -> String:
+	var t: String = COND_LONG.get(c, String(c))
+	if c == &"has_ap_left":
+		return t % int(arg)
+	if "%d" in t:
+		return t % int(float(arg) * 100)
+	if "%s" in t:
+		return t % ("Marked" if arg == &"mark" else String(arg).capitalize())
+	return t
 
 
 static func cond_short(c: StringName, arg) -> String:
 	var t: String = COND_SHORT.get(c, String(c))
+	if c == &"has_ap_left":
+		return t % int(arg)
+	if c == &"enemy_has":
+		return t % ("marked" if arg == &"mark" else String(arg))
 	if "%d" in t:
 		t = t % int(float(arg) * 100)
 	elif "%s" in t:

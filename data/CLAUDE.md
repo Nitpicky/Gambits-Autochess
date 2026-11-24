@@ -9,6 +9,7 @@ PROTOTYPE: data lives in code for fast iteration; can move to .tres later.
 - `units.gd` (`UnitCatalog`): 36 shop units, 12 champions, 4 tokens, 6 monsters. Stats = role template x rarity.
   Gambits = explicit ones, then keyword gambits (Guard, Deathwatch, Sacrifice), then the role default.
 - `items.gd` (`ItemCatalog`): 33 items = flat stats + one effect + optional requirement.
+- `kits.gd` (`Kits`): hand-written unit kits (actions with AP/PP costs, targets and steps; 3 upgrades per unit). Lyonar only for now.
 - `relics.gd` (`RelicCatalog`): 12 team-wide relics; faction relics need 2+ units of that faction in battle.
 
 ## Etiquette
@@ -21,3 +22,4 @@ PROTOTYPE: data lives in code for fast iteration; can move to .tres later.
 - 2026-11-24: Rarities common/rare/epic/legendary/champion with new colours; HP scaled and rounded to 25, Attack scaled; Defense removed (roles and items give % damage reduction); 18 choice-only units; 12 champion relics; % buffs turned flat; new items Battle Fury, Giant Slayer, Bulwark; config: gold styles, CHOICE_ROUNDS, flat buff numbers.
 - 2026-11-24: Fights last until a side is wiped (cycle/turn caps are only stalemate guards); PvE sizes and scales moved to config and lowered; UnitCatalog.attack_range().
 - 2026-11-24: Overtime numbers (OVERTIME_*).
+- 2026-11-24: kits.gd: hand-written Lyonar kits (11 units: own AP/PP actions with costs, 3 per-unit upgrades each); kit units take their default rules from it; FIGHT_SECONDS + EVENT_SECONDS replace OVERTIME_TURN.

@@ -105,12 +105,17 @@ static func _u(id: StringName, nm: String, faction: StringName, rarity: int, rol
 		if KEYWORD_GAMBITS.has(k):
 			g.append(KEYWORD_GAMBITS[k])
 	g.append(ROLE_DEFAULT_GAMBIT[role])
-	d["gambits"] = g
+	d["gambits"] = Kits.default_rules(id) if Kits.has_kit(id) else g  # kit units: their own actions
 	_cache[id] = d
 
 
 ## &"melee" or &"ranged": how the unit attacks by default (its role's basic action).
 static func attack_range(d: Dictionary) -> StringName:
+	if Kits.has_kit(d.get("id", &"")):
+		for a in Kits.kit(d.id).actions:
+			if a.kind == &"ap" and a.get("target", &"") == &"melee":
+				return &"melee"
+		return &"ranged"
 	return &"ranged" if ROLE_DEFAULT_GAMBIT.get(d.get("role", &"striker"), {}).get("action", &"strike") == &"shoot" else &"melee"
 
 

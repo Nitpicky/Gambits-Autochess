@@ -62,6 +62,23 @@ func _init() -> void:
 	var n: int = main.me.roster.size()
 	await _drag(_bench_frame(0).get_global_rect().get_center(), main.shop_box.get_child(0).get_global_rect().get_center())
 	_check("unit dragged onto the shop is sold", main.me.roster.size() == n - 1)
+	# rule rows on the unit card: drag the last rule onto the first
+	var k := Shop.new_unit(main.me, &"grand_templar", 0)
+	main.refresh()
+	await _frames(3)
+	main._select_unit(k.uid)
+	await _frames(5)
+	var card: UnitCard = null
+	for cl in main.card_layer.get_children():
+		if cl is UnitCard:
+			card = cl
+	var rows: Array = []
+	_rows(card, rows)
+	var before_rules: Array = Match.rules_of(k).map(func(r): return r.action)
+	var src_r: Rect2 = rows[rows.size() - 1].get_global_rect()
+	await _drag(src_r.position + Vector2(25, src_r.size.y * 0.5), rows[0].get_global_rect().get_center())  # grab by the action name
+	var after_rules: Array = Match.rules_of(k).map(func(r): return r.action)
+	_check("dragging a rule row changes its priority (%s -> %s)" % [before_rules, after_rules], after_rules.size() == before_rules.size() and after_rules[0] == before_rules[before_rules.size() - 1])
 	print("DRAG PROBE ", "PASSED" if fails == 0 else "FAILED")
 	m.dispose()
 	quit()
@@ -74,6 +91,13 @@ func _check(what: String, ok: bool) -> void:
 	print("  ", "ok  " if ok else "FAIL", " ", what)
 	if not ok:
 		fails += 1
+
+
+func _rows(n: Node, out: Array) -> void:
+	for c in n.get_children():
+		if c is PanelContainer and c.mouse_default_cursor_shape == Control.CURSOR_DRAG:
+			out.append(c)
+		_rows(c, out)
 
 
 func _bench_frame(i: int) -> Control:

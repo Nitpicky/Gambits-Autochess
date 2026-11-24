@@ -7,6 +7,8 @@ extends RefCounted
 
 
 static func cards_for(def_id: StringName, rng: RandomNumberGenerator) -> Array:
+	if Kits.has_kit(def_id):
+		return Kits.upgrades(def_id)  # hand-written per unit
 	var def := UnitCatalog.get_def(def_id)
 	var out: Array = []
 	# Deepen: more of what it already does.

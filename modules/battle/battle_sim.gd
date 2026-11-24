@@ -19,6 +19,7 @@ var events_log: Array = []
 var turn: int = 0
 var clock: float = 0.0   ## fight time in playback seconds (same table the UI waits on)
 var _overtime: int = 0
+var _cur_melee := false  ## the kit action being run attacks in melee
 var _next_uid: int = 1
 var _react_depth: int = 0
 var side_flags: Array = [{}, {}]
@@ -38,6 +39,10 @@ func run(team_a: Dictionary, team_b: Dictionary, seed_value: int) -> Dictionary:
 			u.spend(&"pp", pp)
 	for u in units.duplicate():
 		u.emit(E.BATTLE_START, {"sim": self})
+	for u in units.duplicate():
+		for card in u.cards_start:
+			for st in card:
+				_step(u, st, [u], null, 1.0)
 	var cycle := 1
 	while cycle <= GameConfig.MAX_BATTLE_CYCLES and turn < GameConfig.MAX_BATTLE_TURNS:
 		if _winner() != -2:
@@ -121,7 +126,10 @@ func build_unit(spec: Dictionary, side: int) -> BattleUnit:
 	u.add(Attribute.make(&"damage_reduction", def.get("dr", 0.0), Attribute.Merge.ADD_VALUE))
 	u.add(Attribute.make_pool(&"ap", def.ap))
 	u.add(Attribute.make_pool(&"pp", def.pp))
-	u.gambits = (spec.rules if spec.has("rules") and not spec.rules.is_empty() else def.gambits).duplicate(true)
+	var cards: Array = spec.get("cards", [])
+	u.actions = Kits.actions_for(def.id, cards)
+	var default_rules: Array = Kits.default_rules(def.id, cards) if not u.actions.is_empty() else def.gambits
+	u.gambits = (spec.rules if spec.has("rules") and not spec.rules.is_empty() else default_rules).duplicate(true)
 	if def.extra_actions > 0:
 		u.add(Effects.flag(&"extra_actions", def.extra_actions))
 	for kw in def.keywords:
@@ -129,8 +137,10 @@ func build_unit(spec: Dictionary, side: int) -> BattleUnit:
 	var p := Effects.passive(def.passive)
 	if p:
 		u.add(p)
-	for card in spec.get("cards", []):
+	for card in cards:
 		_apply_mod(u, card, &"card")
+		if card.has("start"):
+			u.cards_start.append(card.start)
 	for iid in spec.get("items", []):
 		var item := ItemCatalog.get_def(iid)
 		if item.is_empty():
@@ -159,8 +169,15 @@ func build_unit(spec: Dictionary, side: int) -> BattleUnit:
 	return u
 
 
-## Upgrade cards are generic modifiers: {hp, atk (flat), keyword, gambit, ap, pp}.
+## Upgrade cards are modifiers: {hp, atk, ini, dr (flat), keyword, gambit, ap, pp, flags}.
+## Kit cards (type "kit") change actions through Kits.actions_for; their "start" steps run at battle start.
 func _apply_mod(u: BattleUnit, card: Dictionary, src: StringName) -> void:
+	if card.has("ini"):
+		u.get_attr(&"initiative").add_flat(src, card.ini)
+	if card.has("dr"):
+		u.get_attr(&"damage_reduction").add_flat(src, card.dr)
+	for f in card.get("flags", {}):
+		u.add(Effects.flag(f, card.flags[f]))
 	if card.has("hp"):
 		u.get_attr(&"hp").add_flat(src, card.hp)
 	if card.has("atk"):
@@ -173,7 +190,7 @@ func _apply_mod(u: BattleUnit, card: Dictionary, src: StringName) -> void:
 		u.add(Effects.keyword(card.keyword))
 		if UnitCatalog.KEYWORD_GAMBITS.has(card.keyword):
 			_add_gambit(u, UnitCatalog.KEYWORD_GAMBITS[card.keyword])
-	if card.has("gambit"):
+	if card.has("gambit") and card.get("type") != "kit":
 		_add_gambit(u, card.gambit)
 
 
@@ -270,23 +287,32 @@ func _take_turn(u: BattleUnit) -> void:
 	for i in actions:
 		if u.ap() <= 0 or not u.alive or _winner() != -2:
 			break
-		if _do_ap_gambit(u, 1.0):
-			u.spend(&"ap", 1)
+		var cost := _do_ap_gambit(u, 1.0)
+		if cost > 0:
+			u.spend(&"ap", cost)
 		else:
 			break
 	if u.alive:
 		u.emit(E.OWN_TURN_END, {"sim": self})
 
 
-func _do_ap_gambit(u: BattleUnit, power_mult: float) -> bool:
+## Runs the first AP rule that can act. Returns the AP it costs (0 = nothing could act).
+func _do_ap_gambit(u: BattleUnit, power_mult: float) -> int:
 	for g in u.gambits:
 		if g.kind != &"ap":
+			continue
+		var cost := _cost(u, g)
+		if cost > u.ap():
 			continue
 		if not _cond_ok(u, g, null):
 			continue
 		if _execute(u, g, null, power_mult):
-			return true
-	return false
+			return cost
+	return 0
+
+
+func _cost(u: BattleUnit, g: Dictionary) -> int:
+	return int(u.actions[g.action].get("cost", 1)) if u.actions.has(g.action) else 1
 
 
 ## A rule (gambit) can carry up to two conditions: cond/arg and cond2/arg2. Both must hold.
@@ -327,6 +353,15 @@ func _check(u: BattleUnit, c: StringName, arg, g: Dictionary, ctx) -> bool:
 			return false
 		&"can_sacrifice":
 			return _find_token(u) != null or u.hp_ratio() > 0.5
+		&"token_died":
+			return ctx != null and ctx.target.is_token and ctx.target.side == u.side
+		&"enemy_died":
+			return ctx != null and ctx.target.side != u.side
+		&"enemy_has":
+			for e in enemies_of(u):
+				if e.has(arg):
+					return true
+			return false
 		&"has_token":
 			return _find_token(u) != null
 	return true
@@ -390,6 +425,8 @@ func lowest_ally(u: BattleUnit, filter := Callable()) -> BattleUnit:
 # ---------------------------------------------------------------- actions
 
 func _execute(u: BattleUnit, g: Dictionary, ctx, power_mult: float) -> bool:
+	if u.actions.has(g.action):
+		return _run_action(u, u.actions[g.action], ctx, power_mult)
 	var power: float = g.get("power", 1.0) * power_mult
 	match g.action:
 		&"strike":
@@ -454,7 +491,7 @@ func _execute(u: BattleUnit, g: Dictionary, ctx, power_mult: float) -> bool:
 				attack(u, t, power, false)
 		# ---- PP reactions (ctx = the triggering situation)
 		&"guard":
-			if ctx == null or ctx.target == u:
+			if ctx == null or ctx.target == u or ctx.target.row != u.row:
 				return false
 			_announce(u, "Guard", true)
 			ctx.target = u
@@ -487,15 +524,17 @@ func _announce(u: BattleUnit, label: String, reaction := false) -> void:
 
 
 ## Single-target attack with targeting reactions (Guard, Dodge) first.
-func attack(src: BattleUnit, target: BattleUnit, power: float, melee: bool, allow_reactions := true) -> void:
+## Returns the unit actually hit (Guard may change it), or null when the attack was dodged.
+func attack(src: BattleUnit, target: BattleUnit, power: float, melee: bool, allow_reactions := true) -> BattleUnit:
 	var ctx := {"source": src, "target": target, "cancel": false, "melee": melee}
 	if allow_reactions:
-		react(&"ally_targeted", row_units(target.side, target.row).filter(func(a): return a != target), ctx, true)
+		react(&"ally_targeted", living(target.side).filter(func(a): return a != target), ctx, true)
 		react(&"self_targeted", [ctx.target], ctx)
 	if ctx.cancel:
 		log_event({"t": "blocked", "u": ctx.target.uid, "text": "Dodged"})
-		return
+		return null
 	deal_damage(src, ctx.target, power, {"melee": melee})
+	return ctx.target
 
 
 func deal_damage(src: BattleUnit, dst: BattleUnit, power: float, opts := {}) -> float:
@@ -609,6 +648,8 @@ func react(trigger: StringName, candidates: Array, ctx: Dictionary, single := fa
 		for g in u.gambits:
 			if g.kind != &"pp" or g.get("trigger", &"") != trigger:
 				continue
+			if _cost(u, g) > u.pp():
+				continue
 			if u.has_flag(&"berserk") and g.action in [&"heal", &"ward_ally", &"guard"]:
 				continue
 			if not _cond_ok(u, g, ctx):
@@ -618,7 +659,7 @@ func react(trigger: StringName, candidates: Array, ctx: Dictionary, single := fa
 				if free:
 					u.used["free_guard"] = true
 				else:
-					u.spend(&"pp", 1)
+					u.spend(&"pp", _cost(u, g))
 					u.emit(E.PP_SPENT, {"sim": self})
 				if single:
 					_react_depth -= 1
@@ -650,6 +691,127 @@ func move_to_back(u: BattleUnit) -> void:
 			u.col = col
 			log_event({"t": "move", "u": u.uid, "row": 1, "col": col})
 			return
+
+
+# ---------------------------------------------------------------- kit actions (data/kits.gd)
+
+func _run_action(u: BattleUnit, a: Dictionary, ctx, power_mult: float) -> bool:
+	var once_key := "once_" + String(a.id)
+	if a.get("once", false) and u.used.get(once_key, false):
+		return false
+	if a.kind == &"pp" and a.get("trigger", &"") == &"ally_targeted":
+		if ctx == null or ctx.target == u or (a.get("reach", &"row") == &"row" and ctx.target.row != u.row):
+			return false
+	var targets := _select(u, a.get("target", &"self"), ctx, [])
+	if targets.is_empty():
+		return false
+	_announce(u, a.name, a.kind == &"pp")
+	_cur_melee = a.get("target", &"") == &"melee"
+	for st in a.steps:
+		_step(u, st, targets, ctx, power_mult)
+	if a.get("once", false):
+		u.used[once_key] = true
+	return true
+
+
+func _select(u: BattleUnit, sel: StringName, ctx, base: Array) -> Array:
+	var out: Array = []
+	match sel:
+		&"melee":
+			out = [pick_target(u, melee_candidates(u))]
+		&"enemy":
+			out = [pick_target(u, enemies_of(u))]
+		&"enemy_lowest":
+			var best: BattleUnit = null
+			for e in enemies_of(u):
+				if best == null or e.hp_ratio() < best.hp_ratio():
+					best = e
+			out = [best]
+		&"enemy_row":
+			out = row_units(1 - u.side, 0 if not row_units(1 - u.side, 0).is_empty() else 1)
+		&"ally_lowest":
+			out = [lowest_ally(u)]
+		&"self":
+			out = [u]
+		&"row_allies":
+			out = row_units(u.side, u.row)
+		&"allies":
+			out = living(u.side)
+		&"trigger_target":
+			out = [ctx.target] if ctx != null else []
+		&"trigger_source":
+			out = [ctx.source] if ctx != null else []
+		&"trigger_original":
+			out = [ctx.get("original")] if ctx != null else []
+		&"row_allies_of_target":
+			if not base.is_empty() and base[0] != null:
+				out = row_units(base[0].side, base[0].row)
+	return out.filter(func(t): return t != null and t.alive)
+
+
+func _step(u: BattleUnit, st: Dictionary, targets: Array, ctx, power_mult: float) -> void:
+	var on: Array = _select(u, st.on, ctx, targets) if st.has("on") else targets
+	match st.do:
+		"damage":
+			for t in on:
+				if not t.alive:
+					continue
+				var power: float = st.get("power", 1.0) * power_mult * (1.0 + _bonus(u, t, st.get("bonus_if", {})))
+				var hit: BattleUnit = t
+				if ctx == null and on.size() == 1 and st.get("on", &"") == &"":
+					hit = attack(u, t, power, _cur_melee)  # single target: Guard/Dodge can answer
+				else:
+					deal_damage(u, t, power, {"row_wide": on.size() > 1})
+				if st.has("behind") and hit != null and hit.row == 0:
+					for b in row_units(hit.side, 1):
+						if b.col == hit.col:
+							deal_damage(u, b, st.behind * power_mult)
+				if hit != null and not hit.alive and st.has("on_kill"):
+					for k in st.on_kill:
+						_step(u, k, [u], ctx, 1.0)
+		"heal":
+			for t in on:
+				heal(u, t, t.max_hp() * st.pct)
+		"status":
+			for t in on:
+				apply_status(u, t, st.id, st.get("stacks", 1))
+		"ward":
+			for t in on:
+				apply_status(u, t, &"ward", 1)
+		"buff":
+			var attr: StringName = st.stat
+			for t in on:
+				t.get_attr(attr).add_flat(&"kit", st.value)
+				var shown := ("+%d%% %s" % [int(st.value * 100), "armour"]) if attr == &"damage_reduction" else ("+%d %s" % [int(st.value), String(attr).capitalize()])
+				log_event({"t": "buff", "u": t.uid, "text": shown})
+		"gain":
+			for t in on:
+				t.gain(st.res, st.n)
+				log_event({"t": "buff", "u": t.uid, "text": "+%d %s" % [st.n, String(st.res).to_upper()]})
+		"redirect":
+			if ctx != null:
+				ctx["original"] = ctx.target
+				ctx.target = u
+		"cancel":
+			if ctx != null:
+				ctx.cancel = true
+		"summon":
+			summon(u, st.token)
+
+
+func _bonus(u: BattleUnit, t: BattleUnit, b: Dictionary) -> float:
+	if b.is_empty():
+		return 0.0
+	var ok := false
+	if b.has("marked"):
+		ok = t.has(&"mark")
+	elif b.has("below"):
+		ok = t.hp_ratio() < b.below
+	elif b.has("above"):
+		ok = t.hp_ratio() >= b.above
+	elif b.has("token_alive"):
+		ok = living(u.side).any(func(a): return a.is_token)
+	return b.get("mult", 0.0) if ok else 0.0
 
 
 # ---------------------------------------------------------------- output

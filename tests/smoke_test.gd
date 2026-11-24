@@ -79,6 +79,36 @@ func _test_battle() -> void:
 		var rr := BattleSim.new().run({"name": "X", "units": team, "relics": RelicCatalog.all().keys()}, {"name": "Y", "units": team, "relics": []}, i)
 		ok = ok and rr.winner in [-1, 0, 1]
 	check(ok, "every unit/item/card/relic combination batch resolves")
+	_test_kits()
+
+
+## Kit units: each upgrade on its own fights, and most kit actions actually get used.
+func _test_kits() -> void:
+	var names := {}
+	var used := {}
+	var ok := true
+	var kit_ids: Array = Kits.all().keys()
+	for id in kit_ids:
+		var options: Array = [[]]
+		for c in Kits.upgrades(id):
+			options.append([c])
+		for cards in options:
+			for a in Kits.actions_for(id, cards).values():
+				names[a.name] = true
+			var team: Array = [{"def": id, "row": 0, "col": 1, "level": 2 if not cards.is_empty() else 1, "cards": cards}]
+			for k in 4:
+				var other: StringName = kit_ids[(kit_ids.find(id) + k + 1) % kit_ids.size()]
+				team.append({"def": other, "row": (k + 1) / 3, "col": (k + 1) % 3})
+			var foes := PvE.monster_team(GameConfig.PVE_FROM + 5, RandomNumberGenerator.new())
+			var rr := BattleSim.new().run({"name": "L", "units": team, "relics": []}, foes, 7)
+			ok = ok and rr.winner in [-1, 0, 1]
+			for ev in rr.log:
+				if ev.t == "act":
+					used[ev.text] = true
+	check(ok, "every kit unit fights with each of its upgrades")
+	var missing: Array = names.keys().filter(func(n): return not used.has(n))
+	print("     kit actions never used: ", missing)
+	check(missing.size() <= names.size() / 4, "most kit actions get used in fights (%d/%d)" % [names.size() - missing.size(), names.size()])
 
 
 func _test_economy() -> void:

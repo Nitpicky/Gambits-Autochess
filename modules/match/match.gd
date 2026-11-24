@@ -183,6 +183,11 @@ func resolve_pick(p: PlayerState, option_idx: int) -> String:
 			var u := p.find_unit(pick.uid)
 			if not u.is_empty():
 				u.cards.append(o.card)
+				# edited rules keep working; an upgrade's new actions get a rule at the end
+				var mine: Array = u.get("rules", [])
+				if not mine.is_empty():
+					for a in o.card.get("add", []):
+						mine.append(Kits.rule_for(a))
 		"gold":
 			p.add_gold(o.amount)
 		"xp":
@@ -246,7 +251,9 @@ func set_rules(p: PlayerState, uid: int, rules: Array) -> void:
 ## The rules a unit currently fights with (its own edits, else the unit default).
 static func rules_of(u: Dictionary) -> Array:
 	var r: Array = u.get("rules", [])
-	return r if not r.is_empty() else UnitCatalog.get_def(u.def).gambits
+	if not r.is_empty():
+		return r
+	return Kits.default_rules(u.def, u.get("cards", [])) if Kits.has_kit(u.def) else UnitCatalog.get_def(u.def).gambits
 
 
 func sell_item(p: PlayerState, bench_idx: int) -> void:

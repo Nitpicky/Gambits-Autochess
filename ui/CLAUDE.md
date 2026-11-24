@@ -20,3 +20,4 @@ PROTOTYPE placeholder UI, built entirely in code so it is cheap to throw away.
 - 2026-11-24: Playtest fixes: bench lists ALL units (board ones lit); drag and drop only (place, swap, unplace, equip, unequip, sell on the shop, drag an offer out to buy); battle narrator line + acting-cell highlight + hit lines; one-shot sprite animations no longer loop; InfoCard hover for items/relics; faction, keyword and Melee/Ranged icons; gold "+X" pop.
 - 2026-11-24: Board cell hit areas are now placed in _ready (they had zero size, so board drops and clicks did nothing).
 - 2026-11-24: Fight timer: the top bar drains over FIGHT_SECONDS (event durations from GameConfig.EVENT_SECONDS), turns red in overtime; playback speeds up per action in overtime; narrator announces it.
+- 2026-11-24: Unit card rules: kit action names + cost pips + hover text; drag a row to reorder, pick conditions from a list (MenuButton), + lists the unit's actions.

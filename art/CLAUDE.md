@@ -11,3 +11,4 @@
 
 ## Recap
 - 2026-11-24: Copied 58 unit sprites and 45 icons.
+- 2026-11-24: Copied 18 unit sprites (choice-only units) and 12 icons (champion relics).

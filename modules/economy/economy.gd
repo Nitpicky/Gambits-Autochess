@@ -13,13 +13,24 @@ static func pay_income(p: PlayerState, round_no: int) -> Dictionary:
 		r.base = GameConfig.FIRST_ROUND_GOLD
 	else:
 		r.base = GameConfig.INCOME
-		r.interest = mini(GameConfig.INTEREST_CAP, p.gold() / GameConfig.INTEREST_PER)
-		r.streak = streak_bonus(p.streak())
+		if p.gold_style == &"interest":
+			r.interest = mini(GameConfig.INTEREST_CAP, p.gold() / GameConfig.INTEREST_PER)
+		if p.gold_style == &"streak":
+			r.streak = streak_bonus(p.streak())
 		var ctx := p.emit(E.ROUND_INCOME, {"gold": 0})
 		r.bonus = ctx.gold
 	r["total"] = r.base + r.interest + r.streak + r.bonus
 	p.add_gold(r.total)
 	return r
+
+
+## Bounty gold style: paid right after each fight. Returns the gold paid.
+static func pay_bounty(p: PlayerState, kills: int, standing: int) -> int:
+	if p.gold_style != &"bounty":
+		return 0
+	var g := mini(GameConfig.BOUNTY_CAP, kills * GameConfig.BOUNTY_PER_KILL + standing * GameConfig.BOUNTY_PER_SURVIVOR)
+	p.add_gold(g)
+	return g
 
 
 static func streak_bonus(streak: int) -> int:

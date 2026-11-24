@@ -8,3 +8,4 @@
 
 ## Recap
 - 2026-11-24: Created.
+- 2026-11-24: Gold styles: only the chosen style pays (Interest, Streak, or Bounty paid after each fight).

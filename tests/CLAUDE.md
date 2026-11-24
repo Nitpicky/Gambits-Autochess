@@ -13,3 +13,4 @@
 ## Recap
 - 2026-11-24: Created smoke test and screenshot tool.
 - 2026-11-24: Screenshot tool captures every screen (picks, planning, battles, results, game over); fixed it racing main._ready().
+- 2026-11-24: Smoke test updated for flat stats, HP steps, gold styles, async UI round; screenshot tool walks the new screen states.

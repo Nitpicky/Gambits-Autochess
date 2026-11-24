@@ -8,3 +8,4 @@
 
 ## Recap
 - 2026-11-24: Created.
+- 2026-11-24: Deepen gives flat HP/Attack.

@@ -10,6 +10,14 @@ func _init() -> void:
 		copies[id] = UnitCatalog.POOL_SIZE[UnitCatalog.get_def(id).rarity]
 
 
+## A choice-only unit was picked: from now on it is in the shared pool (minus the picked copy).
+func add_choice_unit(id: StringName) -> void:
+	var def := UnitCatalog.get_def(id)
+	if def.is_empty() or def.rarity > UnitCatalog.Rarity.LEGENDARY or copies.has(id):
+		return
+	copies[id] = maxi(0, UnitCatalog.POOL_SIZE[def.rarity] - 1)
+
+
 func available(id: StringName) -> int:
 	return copies.get(id, 0)
 

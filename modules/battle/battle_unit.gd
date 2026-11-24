@@ -38,10 +38,6 @@ func atk() -> float:
 	return value(&"attack")
 
 
-func defense() -> float:
-	return value(&"defense")
-
-
 func initiative() -> float:
 	return value(&"initiative")
 

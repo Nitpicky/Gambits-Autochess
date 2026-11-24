@@ -7,19 +7,19 @@ extends RefCounted
 
 enum Rarity { COMMON, RARE, EPIC, LEGENDARY, CHAMPION, TOKEN, MONSTER }
 const RARITY_NAMES := ["Common", "Rare", "Epic", "Legendary", "Champion", "Token", "Monster"]
-const RARITY_COLORS := [Color("c8c8c8"), Color("5aa0f0"), Color("b070e8"), Color("f0a030"), Color("ff5a5a"), Color("888888"), Color("909090")]
+const RARITY_COLORS := [Color("2fb58a"), Color("2aa8c4"), Color("c55fd0"), Color("ef5b2f"), Color("f5a623"), Color("888888"), Color("909090")]
 const PRICES := [15, 20, 25, 30, 0, 0, 0]
 const POOL_SIZE := [12, 9, 6, 4, 0, 0, 0]
 
-## role -> base stats (HP, Attack, Defense, Initiative, AP, PP)
+## role -> base stats (HP, Attack, damage reduction, Speed "ini", AP, PP). There is no Defense stat.
 const ROLES := {
-	&"tank": {"hp": 620, "atk": 55, "def": 18, "ini": 3, "ap": 2, "pp": 2, "row": 0},
-	&"bruiser": {"hp": 520, "atk": 75, "def": 10, "ini": 5, "ap": 2, "pp": 1, "row": 0},
-	&"striker": {"hp": 400, "atk": 85, "def": 6, "ini": 8, "ap": 2, "pp": 1, "row": 0},
-	&"ranged": {"hp": 340, "atk": 72, "def": 4, "ini": 6, "ap": 2, "pp": 1, "row": 1},
-	&"caster": {"hp": 320, "atk": 80, "def": 3, "ini": 5, "ap": 2, "pp": 2, "row": 1},
-	&"support": {"hp": 360, "atk": 48, "def": 6, "ini": 4, "ap": 1, "pp": 3, "row": 1},
-	&"token": {"hp": 160, "atk": 32, "def": 0, "ini": 2, "ap": 1, "pp": 0, "row": 1},
+	&"tank": {"hp": 620, "atk": 55, "dr": 0.2, "ini": 3, "ap": 2, "pp": 2, "row": 0},
+	&"bruiser": {"hp": 520, "atk": 75, "dr": 0.1, "ini": 5, "ap": 2, "pp": 1, "row": 0},
+	&"striker": {"hp": 400, "atk": 85, "dr": 0.0, "ini": 8, "ap": 2, "pp": 1, "row": 0},
+	&"ranged": {"hp": 340, "atk": 72, "dr": 0.0, "ini": 6, "ap": 2, "pp": 1, "row": 1},
+	&"caster": {"hp": 320, "atk": 80, "dr": 0.0, "ini": 5, "ap": 2, "pp": 2, "row": 1},
+	&"support": {"hp": 360, "atk": 48, "dr": 0.0, "ini": 4, "ap": 1, "pp": 3, "row": 1},
+	&"token": {"hp": 160, "atk": 32, "dr": 0.0, "ini": 2, "ap": 1, "pp": 0, "row": 1},
 }
 const RARITY_MULT := [1.0, 1.15, 1.3, 1.5, 1.75, 1.0, 1.0]
 
@@ -63,7 +63,17 @@ static func by_rarity(r: int) -> Array[StringName]:
 static func shop_units() -> Array[StringName]:
 	var out: Array[StringName] = []
 	for id in all():
-		if all()[id].rarity <= Rarity.LEGENDARY:
+		if all()[id].rarity <= Rarity.LEGENDARY and not all()[id].choice_only:
+			out.append(id)
+	return out
+
+
+## Units offered by the round choices (never in the starting pool).
+static func choice_units(rarity: int) -> Array[StringName]:
+	var out: Array[StringName] = []
+	for id in all():
+		var d: Dictionary = all()[id]
+		if d.rarity == rarity and (d.choice_only or rarity == Rarity.CHAMPION):
 			out.append(id)
 	return out
 
@@ -74,9 +84,9 @@ static func _u(id: StringName, nm: String, faction: StringName, rarity: int, rol
 	var d := {
 		"id": id, "name": nm, "faction": faction, "rarity": rarity, "role": role,
 		"keywords": kws, "sprite": sprite,
-		"hp": roundf(r.hp * m * extra.get("hp_mult", 1.0)),
-		"atk": roundf(r.atk * m * extra.get("atk_mult", 1.0)),
-		"def": r["def"] + rarity * 2 + extra.get("def_add", 0),
+		"hp": GameConfig.round_hp(r.hp * m * extra.get("hp_mult", 1.0) * GameConfig.HP_SCALE),
+		"atk": maxf(1.0, roundf(r.atk * m * extra.get("atk_mult", 1.0) * GameConfig.ATK_SCALE)),
+		"dr": r.dr + extra.get("dr_add", 0.0),
 		"ini": r.ini + extra.get("ini_add", 0),
 		"ap": extra.get("ap", r.ap), "pp": extra.get("pp", r.pp),
 		"row": extra.get("row", r.row),
@@ -85,6 +95,8 @@ static func _u(id: StringName, nm: String, faction: StringName, rarity: int, rol
 		"token": extra.get("token", &""),
 		"extra_actions": extra.get("extra_actions", 0),
 		"text": extra.get("text", ""),
+		"choice_only": extra.get("choice", false),  ## not in the shared pool until someone picks it
+		"relic": extra.get("relic", &""),           ## champions: their unique relic
 	}
 	var g: Array = []
 	for eg in extra.get("gambits", []):
@@ -108,7 +120,7 @@ static func _build() -> void:
 	_u(&"lancer", "Lancer", &"lyonar", R, &"bruiser", [&"rally"], "f1_sunforgelancer", {"pp": 1, "gambits": [{"kind": &"pp", "trigger": &"self_hit_melee", "action": &"counter", "power": 0.6}]})
 	_u(&"shieldmaiden", "Shieldmaiden", &"lyonar", R, &"tank", [&"guard", &"ward"], "f1_sunstonemaiden", {"ap": 1, "pp": 3})
 	_u(&"sunforger", "Sunforger", &"lyonar", E, &"support", [&"rally", &"construct"], "f1_shieldforger", {"token": &"sun_totem", "pp": 2, "gambits": [{"kind": &"pp", "trigger": &"ally_damaged", "cond": &"target_below", "arg": 0.4, "action": &"ward_ally"}]})
-	_u(&"grand_templar", "Grand Templar", &"lyonar", L, &"tank", [&"guard", &"rally"], "f1_sunstonetemplar", {"ap": 2, "pp": 3, "passive": {"type": &"row_aura", "stat": &"defense", "pct": 0.15}, "passive_text": "Battle start: allies in its row get +15% Defense."})
+	_u(&"grand_templar", "Grand Templar", &"lyonar", L, &"tank", [&"guard", &"rally"], "f1_sunstonetemplar", {"ap": 2, "pp": 3, "passive": {"type": &"row_aura", "stat": &"damage_reduction", "value": 0.1}, "passive_text": "Battle start: allies in its row take 10% less damage."})
 	# --- Vanar
 	_u(&"frost_scout", "Frost Scout", &"vanar", C, &"ranged", [&"chill"], "f6_icehornet")
 	_u(&"glacier_sentry", "Glacier Sentry", &"vanar", C, &"tank", [&"ward"], "f6_tundraguardian")
@@ -136,7 +148,7 @@ static func _build() -> void:
 	_u(&"shadow_spawner", "Shadow Spawner", &"abyssian", R, &"support", [&"sacrifice", &"construct"], "f4_daemongate", {"token": &"wraithling", "pp": 2})
 	_u(&"night_fiend", "Night Fiend", &"abyssian", R, &"striker", [&"deathwatch", &"feast"], "f4_nightfiend", {"pp": 2})
 	_u(&"void_priestess", "Void Priestess", &"abyssian", E, &"caster", [&"sacrifice", &"deathwatch"], "f4_shadowdancer", {"pp": 3})
-	_u(&"lord_of_ruin", "Lord of Ruin", &"abyssian", L, &"bruiser", [&"deathwatch"], "f4_reaperninemoons", {"ap": 3, "pp": 3, "passive": {"type": &"ruin"}, "passive_text": "+6% Attack whenever any unit dies."})
+	_u(&"lord_of_ruin", "Lord of Ruin", &"abyssian", L, &"bruiser", [&"deathwatch"], "f4_reaperninemoons", {"ap": 3, "pp": 3, "passive": {"type": &"ruin"}, "passive_text": "+1 Attack whenever any unit dies."})
 	# --- Vetruvian
 	_u(&"dune_warden", "Dune Warden", &"vetruvian", C, &"tank", [&"fortify"], "f3_irondervish", {"ap": 1})
 	_u(&"obelisk_weaver", "Obelisk Weaver", &"vetruvian", C, &"support", [&"construct"], "f3_dunecaster", {"token": &"obelisk"})
@@ -145,18 +157,38 @@ static func _build() -> void:
 	_u(&"glass_colossus", "Glass Colossus", &"vetruvian", E, &"tank", [&"fortify"], "f3_anubis", {"hp_mult": 1.35, "ap": 1})
 	_u(&"sand_sovereign", "Sand Sovereign", &"vetruvian", L, &"caster", [&"construct", &"fortify"], "f3_rae", {"token": &"obelisk", "passive": {"type": &"tokens_fortify"}, "passive_text": "Allied tokens gain Fortify."})
 	# --- Champions (12, never in shop)
-	_u(&"zir", "Grandmaster Zir", &"lyonar", CH, &"tank", [&"guard", &"rally"], "f1_grandmasterzir", {"pp": 4, "passive": {"type": &"row_aura", "stat": &"attack", "pct": 0.2}, "passive_text": "Battle start: allies in its row get +20% Attack."})
-	_u(&"radiant_dragoon", "Radiant Dragoon", &"lyonar", CH, &"striker", [&"rally", &"ward"], "f1_radiantdragoon", {"ap": 3, "pp": 2})
-	_u(&"embla", "Grandmaster Embla", &"vanar", CH, &"caster", [&"chill", &"ward"], "f6_grandmasterembla", {"gambits": [{"kind": &"ap", "action": &"chill_row", "power": 0.8}]})
-	_u(&"draugar_lord", "Draugar Lord", &"vanar", CH, &"bruiser", [&"chill", &"mark"], "f6_draugarlord", {"ap": 3})
-	_u(&"zendo", "Grandmaster Zendo", &"songhai", CH, &"striker", [&"swift", &"mark"], "f2_grandmasterzendo", {"ap": 4, "extra_actions": 1, "passive_text": "Takes 2 actions per turn."})
-	_u(&"tai_kwai", "Master of Tai Kwai", &"songhai", CH, &"striker", [&"swift", &"feast"], "f2_masteroftaikwai", {"ap": 3, "ini_add": 3})
-	_u(&"kraigon", "Grandmaster Kraigon", &"magmar", CH, &"bruiser", [&"grow", &"feast"], "f5_grandmasterkraigon", {"ap": 3})
-	_u(&"dreadnaught", "Dreadnaught", &"magmar", CH, &"tank", [&"grow", &"sacrifice"], "f5_dreadnaught", {"passive": {"type": &"sacrifice_grows"}, "passive_text": "Each Sacrifice also triggers Grow twice."})
-	_u(&"variax", "Grandmaster Variax", &"abyssian", CH, &"caster", [&"sacrifice", &"deathwatch"], "f4_grandmastervariax", {"pp": 4, "token": &"wraithling", "passive": {"type": &"ruin"}, "passive_text": "+6% Attack whenever any unit dies."})
-	_u(&"desolater", "Desolater", &"abyssian", CH, &"bruiser", [&"deathwatch", &"fortify"], "f4_desolater", {"pp": 3})
-	_u(&"noshrak", "Grandmaster Noshrak", &"vetruvian", CH, &"caster", [&"construct", &"fortify"], "f3_grandmasternoshrak", {"token": &"obelisk", "passive": {"type": &"tokens_fortify"}, "passive_text": "Allied tokens gain Fortify."})
-	_u(&"sand_howler", "Sand Howler", &"vetruvian", CH, &"bruiser", [&"construct", &"rally"], "f3_sandhowler", {"token": &"scarab", "pp": 2})
+	_u(&"zir", "Grandmaster Zir", &"lyonar", CH, &"tank", [&"guard", &"rally"], "f1_grandmasterzir", {"pp": 4, "passive": {"type": &"row_aura", "stat": &"attack", "value": 3}, "passive_text": "Battle start: allies in its row get +3 Attack.", "relic": &"relic_zir"})
+	_u(&"radiant_dragoon", "Radiant Dragoon", &"lyonar", CH, &"striker", [&"rally", &"ward"], "f1_radiantdragoon", {"ap": 3, "pp": 2, "relic": &"relic_dragoon"})
+	_u(&"embla", "Grandmaster Embla", &"vanar", CH, &"caster", [&"chill", &"ward"], "f6_grandmasterembla", {"gambits": [{"kind": &"ap", "action": &"chill_row", "power": 0.8}], "relic": &"relic_embla"})
+	_u(&"draugar_lord", "Draugar Lord", &"vanar", CH, &"bruiser", [&"chill", &"mark"], "f6_draugarlord", {"ap": 3, "relic": &"relic_draugar"})
+	_u(&"zendo", "Grandmaster Zendo", &"songhai", CH, &"striker", [&"swift", &"mark"], "f2_grandmasterzendo", {"ap": 4, "extra_actions": 1, "passive_text": "Takes 2 actions per turn.", "relic": &"relic_zendo"})
+	_u(&"tai_kwai", "Master of Tai Kwai", &"songhai", CH, &"striker", [&"swift", &"feast"], "f2_masteroftaikwai", {"ap": 3, "ini_add": 3, "relic": &"relic_taikwai"})
+	_u(&"kraigon", "Grandmaster Kraigon", &"magmar", CH, &"bruiser", [&"grow", &"feast"], "f5_grandmasterkraigon", {"ap": 3, "relic": &"relic_kraigon"})
+	_u(&"dreadnaught", "Dreadnaught", &"magmar", CH, &"tank", [&"grow", &"sacrifice"], "f5_dreadnaught", {"passive": {"type": &"sacrifice_grows"}, "passive_text": "Each Sacrifice also triggers Grow twice.", "relic": &"relic_dreadnaught"})
+	_u(&"variax", "Grandmaster Variax", &"abyssian", CH, &"caster", [&"sacrifice", &"deathwatch"], "f4_grandmastervariax", {"pp": 4, "token": &"wraithling", "passive": {"type": &"ruin"}, "passive_text": "+1 Attack whenever any unit dies.", "relic": &"relic_variax"})
+	_u(&"desolater", "Desolater", &"abyssian", CH, &"bruiser", [&"deathwatch", &"fortify"], "f4_desolater", {"pp": 3, "relic": &"relic_desolater"})
+	_u(&"noshrak", "Grandmaster Noshrak", &"vetruvian", CH, &"caster", [&"construct", &"fortify"], "f3_grandmasternoshrak", {"token": &"obelisk", "passive": {"type": &"tokens_fortify"}, "passive_text": "Allied tokens gain Fortify.", "relic": &"relic_noshrak"})
+	_u(&"sand_howler", "Sand Howler", &"vetruvian", CH, &"bruiser", [&"construct", &"rally"], "f3_sandhowler", {"token": &"scarab", "pp": 2, "relic": &"relic_howler"})
+	# --- Choice-only units (offered at the round choices, then added to the shared pool)
+	var ch := {"choice": true}
+	_u(&"azurite_lion", "Azurite Lion", &"lyonar", R, &"striker", [&"rally", &"swift"], "f1_azuritelion", ch)
+	_u(&"ironcliffe", "Ironcliffe Guardian", &"lyonar", E, &"tank", [&"guard", &"ward"], "f1_ironcliffeguardian", {"choice": true, "pp": 3})
+	_u(&"solarius", "Solarius", &"lyonar", L, &"support", [&"rally", &"ward"], "f1_solarius", {"choice": true, "pp": 3, "gambits": [heal_pp, heal_ap]})
+	_u(&"lantern_fox", "Lantern Fox", &"songhai", R, &"ranged", [&"mark", &"swift"], "f2_lanternfox", ch)
+	_u(&"onyx_jaguar", "Onyx Jaguar", &"songhai", E, &"striker", [&"swift", &"feast"], "f2_onyxjaguar", {"choice": true, "ap": 3})
+	_u(&"eclipse_asura", "Eclipse Asura", &"songhai", L, &"caster", [&"mark", &"chill"], "f2_eclipseasura", {"choice": true, "gambits": [{"kind": &"ap", "action": &"mark_row", "power": 0.8}]})
+	_u(&"wind_slicer", "Wind Slicer", &"vetruvian", R, &"striker", [&"swift", &"fortify"], "f3_windslicer", ch)
+	_u(&"pyromancer", "Pyromancer", &"vetruvian", E, &"caster", [&"construct"], "f3_pyromancer", {"choice": true, "token": &"obelisk", "gambits": [{"kind": &"ap", "action": &"row_strike", "power": 0.6}]})
+	_u(&"dreamshaper", "Dreamshaper", &"vetruvian", L, &"support", [&"construct", &"fortify"], "f3_dreamshaper", {"choice": true, "token": &"scarab", "pp": 3, "gambits": [heal_ap]})
+	_u(&"crawler", "Crawler", &"abyssian", R, &"bruiser", [&"deathwatch"], "f4_crawler", {"choice": true, "pp": 2})
+	_u(&"blood_baronette", "Blood Baronette", &"abyssian", E, &"striker", [&"feast", &"deathwatch"], "f4_bloodbaronette", {"choice": true, "pp": 2})
+	_u(&"arcane_devourer", "Arcane Devourer", &"abyssian", L, &"caster", [&"sacrifice", &"deathwatch"], "f4_arcanedevourer", {"choice": true, "pp": 3, "passive": {"type": &"ruin"}, "passive_text": "+1 Attack whenever any unit dies."})
+	_u(&"firebreather", "Firebreather", &"magmar", R, &"ranged", [&"grow"], "f5_firebreather", ch)
+	_u(&"ankylos", "Ankylos", &"magmar", E, &"tank", [&"grow", &"guard"], "f5_ankylos", {"choice": true, "pp": 2})
+	_u(&"megabrontodon", "Megabrontodon", &"magmar", L, &"tank", [&"grow", &"feast"], "f5_megabrontodon", {"choice": true, "hp_mult": 1.2, "pp": 2})
+	_u(&"crystal_beetle", "Crystal Beetle", &"vanar", R, &"tank", [&"ward", &"chill"], "f6_crystalbeetle", ch)
+	_u(&"frost_drake", "Frost Drake", &"vanar", E, &"caster", [&"chill"], "f6_frostdrake", {"choice": true, "gambits": [{"kind": &"ap", "action": &"chill_row", "power": 0.6}]})
+	_u(&"elder_saberspine", "Elder Saberspine", &"vanar", L, &"striker", [&"chill", &"swift"], "f6_eldersaberspine", {"choice": true, "ap": 3})
 	# --- Tokens
 	_u(&"sun_totem", "Sun Totem", &"lyonar", T, &"token", [], "f1_sunwisp")
 	_u(&"wraithling", "Wraithling", &"abyssian", T, &"token", [], "f4_miniminion")

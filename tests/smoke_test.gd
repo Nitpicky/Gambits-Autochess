@@ -36,11 +36,17 @@ func _init() -> void:
 func _test_attributes() -> void:
 	var h := AttributeHolder.new()
 	h.add(Attribute.make_pool(&"hp", 100))
-	h.get_attr(&"hp").add_percent(&"buff", 0.5)
-	check(is_equal_approx(h.value(&"hp"), 150.0), "percent buff applies (100 -> 150)")
+	h.get_attr(&"hp").add_flat(&"buff", 50)
+	check(is_equal_approx(h.value(&"hp"), 150.0), "flat buff applies (100 -> 150)")
 	check(is_equal_approx(h.current(&"hp"), 150.0), "current HP follows a max increase")
-	h.get_attr(&"hp").add_flat(&"item", 50)
-	check(is_equal_approx(h.value(&"hp"), 225.0), "flat then percent: (100+50)*1.5")
+	h.get_attr(&"hp").add_flat(&"item", 25)
+	check(is_equal_approx(h.value(&"hp"), 175.0), "flat buffs stack (100+50+25)")
+	var steps_ok := true
+	for id in UnitCatalog.all():
+		steps_ok = steps_ok and int(UnitCatalog.get_def(id).hp) % GameConfig.HP_STEP == 0
+	for id in ItemCatalog.all():
+		steps_ok = steps_ok and int(ItemCatalog.get_def(id).stats.get("hp", 0)) % GameConfig.HP_STEP == 0
+	check(steps_ok, "every unit and item HP is a multiple of %d" % GameConfig.HP_STEP)
 	h.add(Effects.status(&"chill", 1))
 	h.add(Effects.status(&"chill", 2))
 	check(h.stacks(&"chill") == 3 and h.attributes.size() == 2, "second Chill merges into the first")
@@ -54,7 +60,7 @@ func _test_battle() -> void:
 	var b := {"name": "B", "relics": [&"abyssal_altar", &"hourglass"], "units": [
 		{"def": &"bone_wraith", "row": 0, "col": 0, "items": [&"bone_charm"]}, {"def": &"lord_of_ruin", "row": 0, "col": 1, "items": [&"vampiric_fang", &"berserker_mask"]},
 		{"def": &"night_fiend", "row": 0, "col": 2, "items": [&"mirror_blade", &"riposte_blade"]}, {"def": &"shadow_spawner", "row": 1, "col": 0, "items": [&"ritual_dagger"]},
-		{"def": &"void_priestess", "row": 1, "col": 1, "level": 2, "cards": [{"stats_pct": 0.2, "pp": 1}]}]}
+		{"def": &"void_priestess", "row": 1, "col": 1, "level": 2, "cards": [{"hp": 50, "atk": 3, "pp": 1}]}]}
 	var r := BattleSim.new().run(a, b, 42)
 	check(r.winner in [-1, 0, 1], "battle resolves (winner %d in %d turns)" % [r.winner, r.turns])
 	check(r.log.size() > 10 and r.log[r.log.size() - 1].t == "end", "battle log ends with an end event")
@@ -77,10 +83,17 @@ func _test_battle() -> void:
 
 func _test_economy() -> void:
 	var p := PlayerState.new(0, "T", true)
+	p.gold_style = &"interest"
 	var inc := Economy.pay_income(p, 1)
 	check(p.gold() == 30 and inc.interest == 0, "round 1 pays 30 flat")
 	inc = Economy.pay_income(p, 2)
-	check(inc.interest == 3 and p.gold() == 43, "interest 1 per 10 banked (30 -> +3)")
+	check(inc.interest == 3 and p.gold() == 43, "Interest style: 1 per 10 banked (30 -> +3)")
+	var q := PlayerState.new(1, "S", true)
+	q.gold_style = &"bounty"
+	q.set_gold(30)
+	inc = Economy.pay_income(q, 2)
+	check(inc.interest == 0 and Economy.pay_bounty(q, 3, 2) == 5, "Bounty style: no interest, +1 per kill and per survivor")
+	q.dispose()
 	Economy.add_xp(p, 4)
 	check(p.rank() == 2 and p.xp() == 0, "4 XP reaches rank 2")
 	p.set_streak(4)
@@ -106,7 +119,15 @@ func _test_full_game(seed_value: int) -> void:
 	var alive := m.alive_players()
 	check(m.over, "seed %d: game ends (round %d)" % [seed_value, m.round_no])
 	check(alive.size() == 1 and alive[0].placement == 1, "seed %d: exactly one winner (%s)" % [seed_value, alive[0].display if alive.size() > 0 else "-"])
-	check(saw.has(&"pve") and saw.has(&"pvp") and saw.has(&"champion"), "seed %d: PvE, PvP and Champion rounds all happened" % seed_value)
+	check(saw.has(&"pve") and saw.has(&"pvp"), "seed %d: PvE and PvP rounds both happened" % seed_value)
+	var styles := m.players.filter(func(p): return p.gold_style in GameConfig.GOLD_STYLES).size()
+	check(styles == m.players.size(), "seed %d: every player has a gold style" % seed_value)
+	var choice_held := 0
+	for p in m.players:
+		for u in p.roster:
+			if UnitCatalog.get_def(u.def).choice_only:
+				choice_held += 1
+	print("     choice-only units held at end: ", choice_held)
 	var champs := 0
 	for p in m.players:
 		for u in p.roster:
@@ -130,12 +151,12 @@ func _test_ui() -> void:
 	root.add_child(main)
 	await process_frame
 	await process_frame
-	# Drive the UI: pick the starter, buy, end the round, fast-forward the battle.
-	var ok: bool = main.debug_autoplay_round()
+	# Drive the UI: pick the gold style, buy, end the round, fast-forward the battle on the board.
+	var ok: bool = await main.debug_autoplay_round()
 	await process_frame
 	check(ok, "UI plays one round (pick, buy, fight)")
 	for i in 3:
-		main.debug_autoplay_round()
+		await main.debug_autoplay_round()
 		await process_frame
 	check(main.match_ref.round_no >= 4, "UI reaches round 4")
 	main.match_ref.dispose()

@@ -20,3 +20,4 @@ Shared foundations every module uses. Nothing here knows about shops, battles or
 
 ## Recap
 - 2026-11-24: Created Attribute / AttributeHolder / AttributeBehaviour, GameEvents, PlayerState.
+- 2026-11-24: Attribute percent layer removed (every stat increase is flat); PlayerState gains gold_style and per-unit editable rules.

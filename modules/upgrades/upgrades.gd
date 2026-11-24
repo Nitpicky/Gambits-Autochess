@@ -2,7 +2,7 @@ class_name Upgrades
 extends RefCounted
 ## Upgrade cards offered when a unit levels up: one per path (Deepen / Bridge / Subvert).
 ## Cards are generic modifier dicts consumed by BattleSim._apply_mod:
-## {"stats_pct", "ap", "pp", "keyword", "gambit"} + display fields.
+## {"hp", "atk" (flat), "ap", "pp", "keyword", "gambit"} + display fields.
 ## PROTOTYPE: cards are generic per path, not hand-written per unit.
 
 
@@ -11,8 +11,8 @@ static func cards_for(def_id: StringName, rng: RandomNumberGenerator) -> Array:
 	var out: Array = []
 	# Deepen: more of what it already does.
 	var res := "pp" if def.pp >= def.ap else "ap"
-	var deepen := {"type": "deepen", "name": "Deepen", "stats_pct": 0.2, res: 1,
-		"text": "+20%% HP and Attack, +1 %s." % res.to_upper()}
+	var deepen := {"type": "deepen", "name": "Deepen", "hp": GameConfig.HP_STEP * 2, "atk": 3, res: 1,
+		"text": "+%d HP, +3 Attack, +1 %s." % [GameConfig.HP_STEP * 2, res.to_upper()]}
 	out.append(deepen)
 	# Bridge: a keyword from a neighbouring faction.
 	var pool: Array = []

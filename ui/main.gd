@@ -1,29 +1,46 @@
 extends Control
-## PROTOTYPE: placeholder planning screen. Everything is built in code so it is easy
-## to throw away. Talks only to Match (modules/match/match.gd).
+## PROTOTYPE: the single game screen (layout "take B" from the screens canvas).
+## Planning, fights and picks all happen on it: the board plays the fight, picks dim it.
+## Built entirely in code; talks only to Match (modules/match/match.gd).
 ##
-## Controls: click a shop offer to buy it. Click a unit (roster or board), then a board
-## cell to place it. Click a bench item, then a unit to equip it. Hover anything for details.
+## Controls: click a shop tile to buy. Click a bench or board unit to select it (its card opens
+## beside it, rules editable), then click a board cell to place it. Right-click a board unit to
+## send it back to the bench; right-click a bench unit to sell it. Click an item, then a unit, to
+## equip it; right-click an item to sell it. The fight starts when the timer runs out (Space = now).
+
+const SHOP_TILE := Vector2(130, 130)
+const STYLE_ICONS := {&"interest": &"coin_bag", &"bounty": &"blade", &"streak": &"flame"}
+const STYLE_COLORS := {&"interest": Color("f2c34a"), &"bounty": Color("e0566b"), &"streak": Color("ef8a3a")}
 
 var match_ref: Match
 var me: PlayerState
 var selected: Dictionary = {}   ## {"type": "unit", "uid"} | {"type": "item", "idx"}
+var state: StringName = &"planning"  ## planning | battle | over
+var time_left: float = GameConfig.PLANNING_SECONDS
+var timer_enabled := true        ## the smoke test turns the real-time timer off
 
-var top_label := Label.new()
-var msg_label := Label.new()
-var players_box := VBoxContainer.new()
-var board := GridContainer.new()
-var roster_box := HBoxContainer.new()
-var bench_box := HFlowContainer.new()
-var shop_box := VBoxContainer.new()
-var relic_label := Label.new()
-var detail := RichTextLabel.new()
-var detail_buttons := HBoxContainer.new()
-var reroll_btn := Button.new()
+var board := BoardView.new()
+var relics_box := Control.new()
+var rounds_box := HBoxContainer.new()
+var timer_bar := ProgressBar.new()
+var count_label := Label.new()
+var bench_box := Control.new()
+var items_box := VBoxContainer.new()
+var shop_box := HBoxContainer.new()
+var shop_line := HBoxContainer.new()
+var gold_label := Label.new()
+var rank_label := Label.new()
+var xp_label := Label.new()
+var xp_bar := HBoxContainer.new()
 var lock_btn := Button.new()
+var reroll_btn := Button.new()
 var xp_btn := Button.new()
-var ready_btn := Button.new()
+var players_col := Control.new()
+var card_layer := Control.new()
+var msg_label := Label.new()
 var overlay: Control = null
+var avatars: Dictionary = {}  ## player id -> Avatar
+var _shop_hover: Control = null
 
 
 func _ready() -> void:
@@ -35,11 +52,17 @@ func new_game(seed_value: int) -> void:
 	me = null
 	if match_ref:
 		match_ref.dispose()
+	_clear_overlay()
+	for a in avatars.values():
+		a.queue_free()
+	avatars.clear()
 	match_ref = Match.new()
 	match_ref.changed.connect(refresh)
 	match_ref.new_game(seed_value, true)
 	me = match_ref.human()
 	selected = {}
+	state = &"planning"
+	time_left = GameConfig.PLANNING_SECONDS
 	refresh()
 
 
@@ -50,150 +73,126 @@ func _exit_tree() -> void:
 
 # ---------------------------------------------------------------- layout
 
-func _panel(parent: Node, min_size := Vector2.ZERO) -> VBoxContainer:
-	var pc := PanelContainer.new()
-	pc.custom_minimum_size = min_size
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.11, 0.12, 0.16)
-	sb.set_corner_radius_all(6)
-	sb.set_content_margin_all(8)
-	pc.add_theme_stylebox_override("panel", sb)
-	parent.add_child(pc)
-	var v := VBoxContainer.new()
-	pc.add_child(v)
-	return v
-
-
-func _header(parent: Node, text: String) -> void:
-	var l := Label.new()
-	l.text = text
-	l.add_theme_color_override("font_color", Color("e8c35a"))
-	parent.add_child(l)
-
-
 func _build_layout() -> void:
 	var bg := ColorRect.new()
-	bg.color = Color(0.07, 0.08, 0.1)
+	bg.color = Color("14151c")
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	bg.gui_input.connect(func(ev):
+		if ev is InputEventMouseButton and ev.pressed:
+			_deselect())
 	add_child(bg)
-	var root := VBoxContainer.new()
-	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	root.offset_left = 8
-	root.offset_top = 8
-	root.offset_right = -8
-	root.offset_bottom = -8
-	add_child(root)
-	# Top bar
-	var top := HBoxContainer.new()
-	root.add_child(top)
-	top_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	top_label.add_theme_font_size_override("font_size", 18)
-	top.add_child(top_label)
-	var auto_btn := Button.new()
-	auto_btn.text = "Auto-place"
-	auto_btn.pressed.connect(func(): match_ref.auto_assign(me))
-	top.add_child(auto_btn)
-	xp_btn.pressed.connect(func(): _say(match_ref.buy_xp(me)))
-	top.add_child(xp_btn)
-	ready_btn.text = "Fight!"
-	ready_btn.add_theme_font_size_override("font_size", 18)
-	ready_btn.pressed.connect(_on_ready)
-	top.add_child(ready_btn)
+	# relics, top left
+	relics_box.position = Vector2(12, 10)
+	add_child(relics_box)
+	# round strip + timer, top centre
+	rounds_box.add_theme_constant_override("separation", 8)
+	add_child(rounds_box)
+	timer_bar.show_percentage = false
+	timer_bar.size = Vector2(300, 4)
+	timer_bar.position = Vector2(650, 74)
+	timer_bar.max_value = GameConfig.PLANNING_SECONDS
+	var tb_bg := StyleBoxFlat.new()
+	tb_bg.bg_color = Color("2a2c38")
+	var tb_fill := StyleBoxFlat.new()
+	tb_fill.bg_color = Color("f2c34a")
+	timer_bar.add_theme_stylebox_override("background", tb_bg)
+	timer_bar.add_theme_stylebox_override("fill", tb_fill)
+	add_child(timer_bar)
+	msg_label.position = Vector2(500, 82)
+	msg_label.size = Vector2(600, 20)
+	msg_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	msg_label.add_theme_color_override("font_color", Color("ffb060"))
-	root.add_child(msg_label)
-	# Main row
-	var row := HBoxContainer.new()
-	row.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	root.add_child(row)
-	var left := _panel(row, Vector2(240, 0))
-	_header(left, "Players")
-	left.add_child(players_box)
-	left.add_child(relic_label)
-	relic_label.autowrap_mode = TextServer.AUTOWRAP_WORD
-	relic_label.custom_minimum_size = Vector2(220, 0)
-	var center := VBoxContainer.new()
-	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(center)
-	var bp := _panel(center)
-	_header(bp, "Battle board (back row | front row)  -  enemies come from the right")
-	board.columns = 2
-	board.add_theme_constant_override("h_separation", 6)
-	board.add_theme_constant_override("v_separation", 6)
-	bp.add_child(board)
-	var rp := _panel(center)
-	_header(rp, "Roster (max 6)")
-	rp.add_child(roster_box)
-	var ip := _panel(center)
-	_header(ip, "Item bench (click an item, then a unit)")
-	ip.add_child(bench_box)
-	var right := VBoxContainer.new()
-	right.custom_minimum_size = Vector2(430, 0)
-	row.add_child(right)
-	var sp := _panel(right)
-	_header(sp, "Shop")
-	var sbar := HBoxContainer.new()
-	sp.add_child(sbar)
+	add_child(msg_label)
+	# board, centred
+	var bs := Vector2(860, 460)
+	board.position = Vector2((1600 - bs.x) * 0.5, 118)
+	board.size = bs
+	add_child(board)
+	board.cell_pressed.connect(_on_cell)
+	board.cell_right_pressed.connect(_on_cell_right)
+	board.cell_hovered.connect(_on_cell_hover)
+	count_label.position = board.position + Vector2(30, 96)
+	count_label.add_theme_font_size_override("font_size", 16)
+	add_child(count_label)
+	var person := Glyph.make(&"person", Color("e8e8ee"), Vector2(16, 16))
+	person.position = Vector2(-20, 2)
+	count_label.add_child(person)
+	# bench (zigzag) and items, left of the board
+	bench_box.position = Vector2(board.position.x - 200, 140)
+	add_child(bench_box)
+	items_box.position = Vector2(board.position.x - 280, 160)
+	items_box.add_theme_constant_override("separation", 8)
+	add_child(items_box)
+	# shop line + shop + rank/xp, bottom centre
+	shop_line.position = Vector2(390, 682)
+	shop_line.size = Vector2(820, 36)
+	shop_line.add_theme_constant_override("separation", 6)
+	add_child(shop_line)
+	reroll_btn.custom_minimum_size = Vector2(64, 34)
 	reroll_btn.pressed.connect(func(): _say(match_ref.reroll(me)))
-	sbar.add_child(reroll_btn)
+	_icon_btn(reroll_btn, &"reroll")
+	shop_line.add_child(reroll_btn)
+	lock_btn.custom_minimum_size = Vector2(64, 34)
 	lock_btn.pressed.connect(func(): match_ref.toggle_lock(me))
-	sbar.add_child(lock_btn)
-	sp.add_child(shop_box)
-	var dp := _panel(right)
-	dp.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_header(dp, "Details")
-	detail.fit_content = false
-	detail.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	detail.custom_minimum_size = Vector2(0, 220)
-	dp.add_child(detail)
-	dp.add_child(detail_buttons)
+	shop_line.add_child(lock_btn)
+	var sp := Control.new()
+	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	shop_line.add_child(sp)
+	gold_label.add_theme_font_size_override("font_size", 20)
+	gold_label.add_theme_color_override("font_color", Color("f2c34a"))
+	shop_line.add_child(gold_label)
+	var coin := Glyph.make(&"coin", Color("f2c34a"), Vector2(16, 16))
+	coin.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	shop_line.add_child(coin)
+	shop_box.position = Vector2(386, 728)
+	shop_box.add_theme_constant_override("separation", 12)
+	add_child(shop_box)
+	var rk := VBoxContainer.new()
+	rk.position = Vector2(206, 732)
+	rk.custom_minimum_size = Vector2(160, 0)
+	rk.add_theme_constant_override("separation", 10)
+	add_child(rk)
+	var rk_top := HBoxContainer.new()
+	rk.add_child(rk_top)
+	rank_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	rank_label.add_theme_font_size_override("font_size", 15)
+	rk_top.add_child(rank_label)
+	xp_label.add_theme_color_override("font_color", Color("8a8da0"))
+	rk_top.add_child(xp_label)
+	xp_bar.add_theme_constant_override("separation", 3)
+	xp_bar.custom_minimum_size = Vector2(160, 6)
+	rk.add_child(xp_bar)
+	xp_btn.pressed.connect(func(): _say(match_ref.buy_xp(me)))
+	rk.add_child(xp_btn)
+	# players column, right edge
+	players_col.position = Vector2(1490, 0)
+	players_col.size = Vector2(102, 900)
+	add_child(players_col)
+	card_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(card_layer)
 
 
-func _card(parent: Node, size: Vector2, tip: String, on_click: Callable, color := Color(0.16, 0.17, 0.22), selected_border := false) -> Button:
-	var b := Button.new()
-	b.custom_minimum_size = size
-	b.tooltip_text = tip
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = color
-	sb.set_corner_radius_all(6)
-	if selected_border:
-		sb.set_border_width_all(3)
-		sb.border_color = Color("ffd84a")
-	b.add_theme_stylebox_override("normal", sb)
-	var hov := sb.duplicate()
-	hov.bg_color = color.lightened(0.15)
-	b.add_theme_stylebox_override("hover", hov)
-	b.add_theme_stylebox_override("pressed", hov)
-	b.pressed.connect(on_click)
-	parent.add_child(b)
-	return b
+func _icon_btn(b: Button, k: StringName, c := Color("e8e8ee")) -> void:
+	for ch in b.get_children():
+		ch.queue_free()
+	var g := Glyph.make(k, c, Vector2(18, 18))
+	g.position = (b.custom_minimum_size - g.size) * 0.5
+	b.add_child(g)
 
 
-func _label(parent: Node, text: String, pos: Vector2, size: Vector2, fs := 12, color := Color.WHITE) -> Label:
-	var l := Label.new()
-	l.text = text
-	l.position = pos
-	l.size = size
-	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	l.add_theme_font_size_override("font_size", fs)
-	l.add_theme_color_override("font_color", color)
-	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	l.clip_text = true
-	parent.add_child(l)
-	return l
+func _unhandled_input(ev: InputEvent) -> void:
+	if ev is InputEventKey and ev.pressed and ev.keycode == KEY_SPACE and state == &"planning" and overlay == null:
+		_start_fight()
 
 
-func _unit_visual(b: Button, u: Dictionary, w: float) -> void:
-	var def := UnitCatalog.get_def(u.def)
-	var sv := SpriteView.new()
-	sv.position = Vector2(0, 0)
-	sv.size = Vector2(w, 80)
-	b.add_child(sv)
-	sv.show_unit(def.sprite)
-	_label(b, def.name + (" ★" if u.level > 1 else ""), Vector2(0, 78), Vector2(w, 18), 12, UnitCatalog.RARITY_COLORS[def.rarity])
-	var kws := PlayerState.unit_keywords(u).map(func(k): return Keywords.kw_name(k))
-	_label(b, ", ".join(kws), Vector2(0, 94), Vector2(w, 16), 10, Keywords.FACTION_COLORS[def.faction])
-	if not u.items.is_empty():
-		_label(b, "items: %d" % u.items.size(), Vector2(0, 108), Vector2(w, 14), 10, Color("c0c0c0"))
+func _process(delta: float) -> void:
+	if state != &"planning" or overlay != null or not timer_enabled or match_ref == null:
+		return
+	time_left -= delta
+	timer_bar.value = maxf(0.0, time_left)
+	if time_left <= 0.0:
+		_start_fight()
 
 
 # ---------------------------------------------------------------- refresh
@@ -201,232 +200,416 @@ func _unit_visual(b: Button, u: Dictionary, w: float) -> void:
 func refresh() -> void:
 	if me == null:
 		return
-	var tier_name: String = GameConfig.CATCHUP_TIER_NAMES[me.catchup_tier]
-	var rtype: String = {&"pvp": "PvP", &"pve": "PvE", &"champion": "Champion pick"}[match_ref.round_type]
-	var streak := me.streak()
-	var streak_txt := ("W%d" % streak) if streak > 0 else (("L%d" % -streak) if streak < 0 else "-")
-	top_label.text = "Round %d (%s)   HP %d/%d   Rank %d  XP %d/%d   Gold %d   Streak %s   Catch-up: %s" % [
-		match_ref.round_no, rtype, me.hp(), me.max_hp(), me.rank(), me.xp(), GameConfig.xp_to_next(me.rank()),
-		me.gold(), streak_txt, tier_name]
-	xp_btn.text = "Buy %d XP (%dg)" % [GameConfig.XP_BUY_AMOUNT, GameConfig.XP_BUY_COST]
-	xp_btn.disabled = not Economy.can_buy_xp(me)
-	reroll_btn.text = "Reroll (%dg)" % Economy.reroll_cost(me)
-	lock_btn.text = "Unlock shop" if me.shop_locked else "Lock shop"
+	_refresh_relics()
+	_refresh_rounds()
 	_refresh_players()
 	_refresh_board()
-	_refresh_roster()
 	_refresh_bench()
+	_refresh_items()
 	_refresh_shop()
-	_refresh_detail()
-	_refresh_pick()
+	_refresh_card()
+	timer_bar.value = maxf(0.0, time_left)
+	if state == &"planning" and overlay == null and not me.pending_picks.is_empty():
+		_show_pick()
+
+
+func _clear(n: Node) -> void:
+	for c in n.get_children():
+		n.remove_child(c)
+		c.queue_free()
+
+
+func _refresh_relics() -> void:
+	_clear(relics_box)
+	for i in me.relics.size():
+		var r := RelicCatalog.get_def(me.relics[i])
+		var sv := SpriteView.new()
+		sv.size = Vector2(44, 44)
+		sv.position = Vector2(i * 46, 22 if i % 2 == 1 else 0)
+		sv.mouse_filter = Control.MOUSE_FILTER_STOP
+		sv.tooltip_text = Describe.relic(r)
+		relics_box.add_child(sv)
+		sv.show_icon(r.icon, 0.9)
+
+
+func _refresh_rounds() -> void:
+	_clear(rounds_box)
+	var cur := match_ref.round_no
+	for rn in range(maxi(1, cur - 4), cur + 5):
+		var v := VBoxContainer.new()
+		v.custom_minimum_size = Vector2(44, 0)
+		v.add_theme_constant_override("separation", 2)
+		rounds_box.add_child(v)
+		var now := rn == cur
+		var s := 40.0 if now else 32.0
+		var done := rn < cur
+		var res := ""
+		for h in me.history:
+			if h.round == rn:
+				res = h.result
+		var bgc := Color("f2c34a") if now else (Color("2f5a3b") if res == "W" else (Color("6a2f2f") if res == "L" else Color("1c1e28")))
+		var fg := Color("14151c") if now else (Color("e8e8ee") if done else Color("8a8da0"))
+		var holder := CenterContainer.new()
+		holder.custom_minimum_size = Vector2(44, 40)
+		v.add_child(holder)
+		var circ := Glyph.make(&"circle", bgc, Vector2(s, s))
+		holder.add_child(circ)
+		var kind: StringName = &"skull" if GameConfig.is_pve(rn) else &"swords"
+		if GameConfig.CHOICE_ROUNDS.has(rn):
+			kind = &"crown"
+		var ic := Glyph.make(kind, fg, Vector2(18, 18))
+		ic.position = Vector2(s - 18, s - 18) * 0.5
+		circ.add_child(ic)
+		var under := Label.new()
+		under.text = match_ref.opponent_name(me) if now else ""
+		under.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		under.add_theme_font_size_override("font_size", 12)
+		under.add_theme_color_override("font_color", Color("f2c34a"))
+		v.add_child(under)
+	rounds_box.reset_size()
+	rounds_box.position = Vector2(800 - rounds_box.size.x * 0.5, 8)
 
 
 func _refresh_players() -> void:
-	for c in players_box.get_children():
-		c.queue_free()
-	var ps := match_ref.players.duplicate()
-	ps.sort_custom(func(a, b): return a.hp() > b.hp() if a.alive == b.alive else a.alive)
-	for p in ps:
-		var l := Label.new()
-		var tag := "  (you)" if p == me else ""
-		l.text = ("%s%s  HP %d  R%d" % [p.display, tag, p.hp(), p.rank()]) if p.alive else ("%s  out (#%d)" % [p.display, p.placement])
-		l.add_theme_color_override("font_color", Color("ffd84a") if p == me else (Color.WHITE if p.alive else Color("777777")))
-		players_box.add_child(l)
-	var lean := me.lean.keys().filter(func(a): return me.lean[a] > 0.0).map(func(a): return Keywords.ARCHETYPES[a].name)
-	var build := ShopBias.main_build(me)
-	var relics := me.relics.map(func(r): return RelicCatalog.get_def(r).name)
-	relic_label.text = "\nStarting lean: %s\nMain build: %s\n\nRelics: %s" % [
-		", ".join(lean) if not lean.is_empty() else "faded", Keywords.ARCHETYPES[build].name if build != &"" else "none yet",
-		", ".join(relics) if not relics.is_empty() else "none"]
+	var order: Array = match_ref.players.duplicate()
+	order.sort_custom(func(a, b):
+		if a.alive != b.alive:
+			return a.alive
+		return a.hp() > b.hp() if a.hp() != b.hp() else a.id < b.id)
+	var step := 900.0 / order.size()
+	for i in order.size():
+		var p: PlayerState = order[i]
+		var av: Avatar = avatars.get(p.id)
+		if av == null:
+			av = Avatar.new()
+			av.setup(p.display, p.id == me.id)
+			av.position = Vector2(15, step * i + (step - 90) * 0.5)
+			players_col.add_child(av)
+			avatars[p.id] = av
+		av.set_hp(p.hp(), p.max_hp(), p.alive)
+		var target := Vector2(15, step * i + (step - 90) * 0.5)
+		if av.position != target:
+			var tw := create_tween()
+			tw.tween_property(av, "position", target, 0.4).set_trans(Tween.TRANS_CUBIC)
 
 
 func _refresh_board() -> void:
-	for c in board.get_children():
-		c.queue_free()
-	for col in GameConfig.BOARD_COLS:
-		for row in [1, 0]:
-			var u := me.unit_at(row, col)
-			var tip := Describe.unit_def(UnitCatalog.get_def(u.def), u) if not u.is_empty() else ("Empty %s cell" % ("front" if row == 0 else "back"))
-			var sel: bool = not u.is_empty() and selected.get("uid", -1) == u.uid
-			var b := _card(board, Vector2(170, 124), tip, _on_cell.bind(row, col), Color(0.14, 0.2, 0.16) if row == 0 else Color(0.14, 0.16, 0.22), sel)
-			if u.is_empty():
-				_label(b, "Front" if row == 0 else "Back", Vector2(0, 50), Vector2(170, 20), 12, Color("777777"))
-			else:
-				_unit_visual(b, u, 170)
-
-
-func _refresh_roster() -> void:
-	for c in roster_box.get_children():
-		c.queue_free()
-	for u in me.roster:
-		var sel: bool = selected.get("uid", -1) == u.uid
-		var b := _card(roster_box, Vector2(120, 124), Describe.unit_def(UnitCatalog.get_def(u.def), u), _on_unit.bind(u.uid), Color(0.16, 0.17, 0.22), sel)
-		_unit_visual(b, u, 120)
-		if u.col >= 0:
-			_label(b, "in battle", Vector2(0, 0), Vector2(120, 14), 10, Color("8fd18f"))
-	for i in GameConfig.ROSTER_MAX - me.roster.size():
-		var e := _card(roster_box, Vector2(120, 124), "Empty roster slot", func(): pass, Color(0.12, 0.12, 0.15))
-		e.disabled = true
+	count_label.text = "%d/%d" % [me.assigned().size(), me.rank()]
+	if state != &"planning":
+		return
+	var spec := match_ref.preview_spec(me)
+	board.show_planning(me.assigned(), spec.get("units", []))
+	board.selected = Vector3i(-1, -1, -1)
+	if selected.get("type") == "unit":
+		var u := me.find_unit(selected.uid)
+		if not u.is_empty() and u.col >= 0:
+			board.selected = Vector3i(0, u.row, u.col)
+	board.queue_redraw()
 
 
 func _refresh_bench() -> void:
-	for c in bench_box.get_children():
-		c.queue_free()
+	_clear(bench_box)
+	var bench: Array = me.roster.filter(func(u): return u.col < 0)
+	for i in bench.size():
+		var u: Dictionary = bench[i]
+		var d := UnitCatalog.get_def(u.def)
+		var cell := Control.new()
+		cell.size = Vector2(96, 118)
+		cell.position = Vector2((i % 2) * 118, (i / 2) * 136 + (60 if i % 2 == 1 else 0))
+		bench_box.add_child(cell)
+		# item slots: 2 rows of hexes above the frame, bottom row fills first
+		var cap := PlayerState.item_capacity(u)
+		for s in cap:
+			var row := s / 3
+			var colx := s % 3
+			var hx := Glyph.make(&"hex_slot", Color("2a2c38") if s >= u.items.size() else Color(0, 0, 0, 0), Vector2(22, 24))
+			hx.position = Vector2(15 + colx * 24, 26 - row * 22)
+			cell.add_child(hx)
+			if s < u.items.size():
+				var it := ItemCatalog.get_def(u.items[s])
+				var isv := SpriteView.new()
+				isv.size = Vector2(22, 24)
+				hx.add_child(isv)
+				isv.show_icon(it.icon, 0.35)
+		var b := Button.new()
+		b.position = Vector2(18, 54)
+		b.size = Vector2(60, 60)
+		b.flat = true
+		b.focus_mode = Control.FOCUS_NONE
+		var sel: bool = selected.get("type") == "unit" and selected.uid == u.uid
+		var frame := Glyph.make(&"circle", Color("1c1e28"), Vector2(60, 60))
+		frame.outline = Color("f2c34a") if sel else UnitCatalog.RARITY_COLORS[d.rarity]
+		b.add_child(frame)
+		var sv := SpriteView.new()
+		sv.size = Vector2(60, 60)
+		frame.add_child(sv)
+		sv.show_unit(d.sprite, false, 0.75)
+		b.gui_input.connect(_on_bench_input.bind(u.uid))
+		cell.add_child(b)
+
+
+func _refresh_items() -> void:
+	_clear(items_box)
 	for i in me.item_bench.size():
 		var it := ItemCatalog.get_def(me.item_bench[i])
-		var sel: bool = selected.get("type", "") == "item" and selected.idx == i
-		var b := _card(bench_box, Vector2(84, 84), Describe.item(it), _on_item.bind(i), Color(0.16, 0.17, 0.22), sel)
+		var b := Button.new()
+		b.custom_minimum_size = Vector2(56, 56)
+		b.flat = true
+		b.focus_mode = Control.FOCUS_NONE
+		b.tooltip_text = Describe.item(it)
 		var sv := SpriteView.new()
-		sv.size = Vector2(84, 64)
+		sv.size = Vector2(56, 56)
 		b.add_child(sv)
 		sv.show_icon(it.icon, 0.8)
-		_label(b, it.name, Vector2(0, 64), Vector2(84, 16), 10)
-	if me.item_bench.is_empty():
-		var l := Label.new()
-		l.text = "No items"
-		l.add_theme_color_override("font_color", Color("777777"))
-		bench_box.add_child(l)
+		if selected.get("type") == "item" and selected.idx == i:
+			var ring := Glyph.make(&"ring", Color("f2c34a"), Vector2(56, 56))
+			b.add_child(ring)
+		b.gui_input.connect(_on_item_input.bind(i))
+		items_box.add_child(b)
 
 
 func _refresh_shop() -> void:
-	for c in shop_box.get_children():
-		c.queue_free()
-	var row1 := HBoxContainer.new()
-	var row2 := HBoxContainer.new()
-	shop_box.add_child(row1)
-	shop_box.add_child(row2)
+	_clear(shop_box)
+	_shop_hover = null
+	var dim := state != &"planning"
+	shop_box.modulate = Color(1, 1, 1, 0.35 if dim else 1.0)
+	shop_line.modulate = shop_box.modulate
 	for i in me.shop_offers.size():
 		var o: Dictionary = me.shop_offers[i]
-		var parent := row1 if o.kind == &"unit" else row2
-		var tip := ""
-		var name := ""
-		var color := Color(0.16, 0.17, 0.22)
-		if o.kind == &"unit":
-			var def := UnitCatalog.get_def(o.id)
-			tip = Describe.unit_def(def)
-			var owned := me.find_by_def(o.id)
-			if not owned.is_empty():
-				tip = "Buying this UPGRADES your %s.\n\n" % def.name + tip
-			name = def.name
-		elif o.kind == &"item":
-			var it := ItemCatalog.get_def(o.id)
-			tip = Describe.item(it)
-			name = it.name
-		else:
-			var r := RelicCatalog.get_def(o.id)
-			tip = Describe.relic(r)
-			name = r.name
-			color = Color(0.2, 0.16, 0.24)
-		var b := _card(parent, Vector2(136, 128), tip, _on_offer.bind(i), color)
-		b.disabled = o.sold
-		var sv := SpriteView.new()
-		sv.size = Vector2(136, 80)
-		b.add_child(sv)
+		var b := Button.new()
+		b.custom_minimum_size = SHOP_TILE
+		b.focus_mode = Control.FOCUS_NONE
+		b.disabled = o.sold or dim
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = Color("2b2f45") if not o.sold else Color("1a1b24")
+		for st in ["normal", "hover", "pressed", "disabled"]:
+			b.add_theme_stylebox_override(st, sb)
+		b.pressed.connect(_on_offer.bind(i))
+		shop_box.add_child(b)
 		if o.sold:
-			_label(b, "SOLD", Vector2(0, 50), Vector2(136, 20), 14, Color("888888"))
 			continue
-		if o.kind == &"unit":
-			var def := UnitCatalog.get_def(o.id)
-			sv.show_unit(def.sprite)
-			_label(b, name, Vector2(0, 78), Vector2(136, 18), 12, UnitCatalog.RARITY_COLORS[def.rarity])
-			_label(b, Keywords.FACTION_NAMES[def.faction] + ": " + ", ".join(def.keywords.map(func(k): return Keywords.kw_name(k))), Vector2(0, 94), Vector2(136, 14), 10, Keywords.FACTION_COLORS[def.faction])
-			if not me.find_by_def(o.id).is_empty():
-				_label(b, "UPGRADE", Vector2(0, 2), Vector2(136, 14), 10, Color("ffd84a"))
-		else:
-			sv.show_icon(ItemCatalog.get_def(o.id).icon if o.kind == &"item" else RelicCatalog.get_def(o.id).icon, 0.9)
-			_label(b, ("Relic: " if o.kind == &"relic" else "") + name, Vector2(0, 80), Vector2(136, 18), 11)
-		var price := "%dg" % o.price
-		if o.discount > 0:
-			price += "  (-%d!)" % o.discount
-		_label(b, price, Vector2(0, 108), Vector2(136, 16), 12, Color("ffd84a") if o.discount == 0 else Color("70ff70"))
+		var name := ""
+		var rar := 0
+		var icon := Control.new()
+		icon.position = Vector2(32, 12)
+		icon.size = Vector2(66, 66)
+		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		b.add_child(icon)
+		match o.kind:
+			&"unit":
+				var d := UnitCatalog.get_def(o.id)
+				name = d.name
+				rar = d.rarity
+				var circle := Glyph.make(&"circle", Color("1c1e28"), Vector2(66, 66))
+				circle.outline = UnitCatalog.RARITY_COLORS[rar]
+				icon.add_child(circle)
+				var sv := SpriteView.new()
+				sv.size = Vector2(66, 66)
+				circle.add_child(sv)
+				sv.show_unit(d.sprite, false, 0.85)
+				b.mouse_entered.connect(_shop_card.bind(b, d))
+				b.mouse_exited.connect(_shop_card_off)
+				if not me.find_by_def(o.id).is_empty():
+					b.add_child(_badge_up())
+			&"item":
+				var it := ItemCatalog.get_def(o.id)
+				name = it.name
+				rar = it.rarity
+				b.tooltip_text = Describe.item(it)
+				var sv := SpriteView.new()
+				sv.size = Vector2(66, 66)
+				icon.add_child(sv)
+				sv.show_icon(it.icon, 0.9)
+			&"relic":
+				var r := RelicCatalog.get_def(o.id)
+				name = r.name
+				rar = r.rarity
+				b.tooltip_text = Describe.relic(r)
+				var sv := SpriteView.new()
+				sv.size = Vector2(66, 66)
+				icon.add_child(sv)
+				sv.show_icon(r.icon, 0.9)
+		var badge := Glyph.rarity(rar, 16)
+		badge.position = Vector2(6, 6)
+		b.add_child(badge)
+		var nl := Label.new()
+		nl.text = name
+		nl.position = Vector2(0, 82)
+		nl.size = Vector2(130, 18)
+		nl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		nl.add_theme_font_size_override("font_size", 12)
+		nl.clip_text = true
+		b.add_child(nl)
+		var price := Label.new()
+		price.text = str(o.price - o.get("discount", 0))
+		price.position = Vector2(84, 104)
+		price.size = Vector2(26, 20)
+		price.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		price.add_theme_color_override("font_color", Color("7ce08a") if o.get("discount", 0) > 0 else Color("f2c34a"))
+		b.add_child(price)
+		var pc := Glyph.make(&"coin", Color("f2c34a"), Vector2(11, 11))
+		pc.position = Vector2(113, 109)
+		b.add_child(pc)
+	# shop line
+	gold_label.text = str(me.gold())
+	var rc := Economy.reroll_cost(me)
+	reroll_btn.text = ""
+	reroll_btn.tooltip_text = "Reroll (%d)" % rc
+	_icon_btn(lock_btn, &"lock" if me.shop_locked else &"unlock", Color("f2c34a") if me.shop_locked else Color("e8e8ee"))
+	rank_label.text = "Rank %d" % me.rank()
+	var need := GameConfig.xp_to_next(me.rank())
+	xp_label.text = "%d/%d" % [me.xp(), need] if need > 0 else "max"
+	_clear(xp_bar)
+	var blocks := maxi(1, int(ceil(float(need) / GameConfig.XP_BUY_AMOUNT)))
+	for k in blocks:
+		var seg := ProgressBar.new()
+		seg.show_percentage = false
+		seg.custom_minimum_size = Vector2(0, 6)
+		seg.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		seg.max_value = GameConfig.XP_BUY_AMOUNT
+		seg.value = clampf(me.xp() - k * GameConfig.XP_BUY_AMOUNT, 0, GameConfig.XP_BUY_AMOUNT)
+		var bgs := StyleBoxFlat.new()
+		bgs.bg_color = Color("2a2c38")
+		var fs := StyleBoxFlat.new()
+		fs.bg_color = Color("5aa9e6")
+		seg.add_theme_stylebox_override("background", bgs)
+		seg.add_theme_stylebox_override("fill", fs)
+		xp_bar.add_child(seg)
+	xp_btn.text = "XP · %d" % GameConfig.XP_BUY_COST
+	xp_btn.disabled = not Economy.can_buy_xp(me) or dim
+	reroll_btn.disabled = dim
 
 
-func _refresh_detail() -> void:
-	for c in detail_buttons.get_children():
-		c.queue_free()
-	detail.clear()
-	match selected.get("type", ""):
-		"unit":
-			var u := me.find_unit(selected.uid)
-			if u.is_empty():
-				selected = {}
-				return
-			detail.append_text(Describe.unit_def(UnitCatalog.get_def(u.def), u))
-			var def := UnitCatalog.get_def(u.def)
-			var refund: int = GameConfig.CHAMPION_SELL if def.rarity == UnitCatalog.Rarity.CHAMPION else u.paid
-			_button(detail_buttons, "Sell (+%dg)" % refund, func():
-				match_ref.sell_unit(me, u.uid)
-				selected = {}
-				refresh())
-			if u.col >= 0:
-				_button(detail_buttons, "Bench it", func(): match_ref.assign(me, u.uid, -1, -1))
-			for i in u.items.size():
-				_button(detail_buttons, "Unequip " + ItemCatalog.get_def(u.items[i]).name, func(): match_ref.unequip(me, u.uid, i))
-		"item":
-			if selected.idx >= me.item_bench.size():
-				selected = {}
-				return
-			var iid: StringName = me.item_bench[selected.idx]
-			detail.append_text(Describe.item(ItemCatalog.get_def(iid)) + "\n\nClick a unit to equip it.")
-			_button(detail_buttons, "Sell (+%dg)" % Shop.item_sell_price(iid), func():
-				match_ref.sell_item(me, selected.idx)
-				selected = {}
-				refresh())
-		_:
-			detail.append_text("Hover anything for details. Click a shop card to buy.\nClick a unit, then a board cell to place it (your Rank = how many can fight).\nClick an item, then a unit to equip it.\nPress Fight! when ready.")
+func _badge_up() -> Control:
+	var g := Glyph.make(&"up", Color("7ce08a"), Vector2(18, 18))
+	g.position = Vector2(106, 6)
+	return g
 
 
-func _button(parent: Node, text: String, cb: Callable) -> Button:
-	var b := Button.new()
-	b.text = text
-	b.pressed.connect(cb)
-	parent.add_child(b)
-	return b
+func _shop_card(b: Control, d: Dictionary) -> void:
+	_shop_card_off()
+	var c := UnitCard.build(d)
+	card_layer.add_child(c)
+	c.position = Vector2(b.global_position.x + 65 - UnitCard.WIDTH * 0.5, b.global_position.y - c.size.y - 30)
+	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_shop_hover = c
 
 
-# ---------------------------------------------------------------- input handlers
+func _shop_card_off() -> void:
+	if is_instance_valid(_shop_hover):
+		_shop_hover.queue_free()
+	_shop_hover = null
+
+
+## The selected unit's card, right next to the unit; its rules are edited on it.
+func _refresh_card() -> void:
+	for c in card_layer.get_children():
+		if c != _shop_hover:
+			c.queue_free()
+	if state != &"planning" or selected.get("type") != "unit":
+		return
+	var u := me.find_unit(selected.uid)
+	if u.is_empty():
+		return
+	var c := UnitCard.build(UnitCatalog.get_def(u.def), u, true, Match.rules_of(u))
+	c.rules_changed.connect(func(r): match_ref.set_rules(me, u.uid, r))
+	card_layer.add_child(c)
+	var pos: Vector2
+	if u.col >= 0:
+		var q := board.cell_quad(0, u.row, u.col)
+		pos = board.position + Vector2(maxf(q[1].x, q[2].x) + 12, q[0].y - 30)
+	else:
+		pos = Vector2(board.position.x + 10, 110)
+	c.position = Vector2(clampf(pos.x, 10, 1480 - UnitCard.WIDTH), clampf(pos.y, 90, 660 - c.size.y))
+
+
+# ---------------------------------------------------------------- input
 
 func _say(err: String) -> void:
 	msg_label.text = err
+	if err != "":
+		var tw := create_tween()
+		msg_label.modulate.a = 1.0
+		tw.tween_interval(1.6)
+		tw.tween_property(msg_label, "modulate:a", 0.0, 0.5)
+
+
+func _deselect() -> void:
+	if not selected.is_empty():
+		selected = {}
+		refresh()
 
 
 func _on_offer(i: int) -> void:
+	_shop_card_off()
 	_say(match_ref.buy(me, i))
 
 
-func _on_unit(uid: int) -> void:
-	if selected.get("type", "") == "item":
+func _select_unit(uid: int) -> void:
+	if selected.get("type") == "item":
 		_say(match_ref.equip(me, selected.idx, uid))
 		selected = {}
-	elif selected.get("uid", -1) == uid:
+		refresh()
+		return
+	if selected.get("type") == "unit" and selected.uid == uid:
 		selected = {}
 	else:
 		selected = {"type": "unit", "uid": uid}
 	refresh()
 
 
-func _on_item(i: int) -> void:
-	selected = {} if (selected.get("type", "") == "item" and selected.idx == i) else {"type": "item", "idx": i}
-	refresh()
-
-
-func _on_cell(row: int, col: int) -> void:
-	var occupant := me.unit_at(row, col)
-	if selected.get("type", "") == "unit":
-		if not occupant.is_empty() and occupant.uid == selected.uid:
-			selected = {}
-		else:
-			_say(match_ref.assign(me, selected.uid, row, col))
-			selected = {}
-	elif selected.get("type", "") == "item" and not occupant.is_empty():
-		_say(match_ref.equip(me, selected.idx, occupant.uid))
+func _on_bench_input(ev: InputEvent, uid: int) -> void:
+	if state != &"planning" or not (ev is InputEventMouseButton and ev.pressed):
+		return
+	if ev.button_index == MOUSE_BUTTON_LEFT:
+		_select_unit(uid)
+	elif ev.button_index == MOUSE_BUTTON_RIGHT:
 		selected = {}
-	elif not occupant.is_empty():
-		selected = {"type": "unit", "uid": occupant.uid}
-	refresh()
+		match_ref.sell_unit(me, uid)
 
 
-# ---------------------------------------------------------------- picks, battles, game over
+func _on_item_input(ev: InputEvent, i: int) -> void:
+	if state != &"planning" or not (ev is InputEventMouseButton and ev.pressed):
+		return
+	if ev.button_index == MOUSE_BUTTON_LEFT:
+		selected = {} if selected.get("type") == "item" and selected.idx == i else {"type": "item", "idx": i}
+		refresh()
+	elif ev.button_index == MOUSE_BUTTON_RIGHT:
+		selected = {}
+		match_ref.sell_item(me, i)
+
+
+func _on_cell(side: int, row: int, col: int) -> void:
+	if state != &"planning" or side != 0:
+		return
+	var occ := me.unit_at(row, col)
+	if selected.get("type") == "unit":
+		var u := me.find_unit(selected.uid)
+		if not occ.is_empty() and occ.uid == u.get("uid", -1):
+			selected = {}
+			refresh()
+			return
+		_say(match_ref.assign(me, selected.uid, row, col))
+		selected = {}
+		refresh()
+	elif not occ.is_empty():
+		_select_unit(occ.uid)
+
+
+func _on_cell_right(side: int, row: int, col: int) -> void:
+	if state != &"planning" or side != 0:
+		return
+	var occ := me.unit_at(row, col)
+	if not occ.is_empty():
+		selected = {}
+		match_ref.assign(me, occ.uid, -1, -1)
+
+
+func _on_cell_hover(_side: int, _row: int, _col: int) -> void:
+	pass
+
+
+# ---------------------------------------------------------------- picks
 
 func _clear_overlay() -> void:
 	if overlay:
@@ -434,173 +617,181 @@ func _clear_overlay() -> void:
 		overlay = null
 
 
-func _make_overlay() -> VBoxContainer:
+func _dim_overlay() -> Control:
 	_clear_overlay()
-	overlay = Control.new()
-	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(overlay)
-	var dim := ColorRect.new()
-	dim.color = Color(0, 0, 0, 0.75)
-	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	overlay.add_child(dim)
-	var center := CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	overlay.add_child(center)
-	var v := _panel(center, Vector2(700, 0))
-	return v
+	var o := ColorRect.new()
+	o.color = Color(0.04, 0.045, 0.06, 0.78)
+	o.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(o)
+	overlay = o
+	return o
 
 
-func _refresh_pick() -> void:
-	if me.pending_picks.is_empty() or not me.alive:
-		if overlay and overlay.has_meta("pick"):
-			_clear_overlay()
-		return
+func _show_pick() -> void:
+	_shop_card_off()
 	var pick: Dictionary = me.pending_picks[0]
-	var v := _make_overlay()
-	overlay.set_meta("pick", true)
-	_header(v, pick.title)
+	var o := _dim_overlay()
 	var row := HBoxContainer.new()
-	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	v.add_child(row)
+	row.add_theme_constant_override("separation", 48)
+	o.add_child(row)
 	for i in pick.options.size():
-		var o: Dictionary = pick.options[i]
-		var tip := ""
-		var b := _card(row, Vector2(210, 310), "", _on_pick.bind(i))
-		var sv := SpriteView.new()
-		sv.size = Vector2(210, 110)
-		b.add_child(sv)
-		var title := ""
-		match o.kind:
-			"unit":
-				var def := UnitCatalog.get_def(o.id)
-				sv.show_unit(def.sprite, false, 1.3)
-				title = def.name
-				tip = Describe.unit_def(def)
-			"card":
-				title = o.card.name
-				tip = o.card.text
+		var opt: Dictionary = pick.options[i]
+		var col := VBoxContainer.new()
+		col.add_theme_constant_override("separation", 26)
+		row.add_child(col)
+		match pick.kind:
+			"gold_style":
+				col.add_child(_style_card(opt.id, i))
+			"choice":
+				var c := UnitCard.build(UnitCatalog.get_def(opt.id))
+				_clickable(c, i)
+				col.add_child(c)
+				var icon_name := ""
+				var tip := ""
+				if opt.has("item"):
+					icon_name = ItemCatalog.get_def(opt.item).icon
+					tip = Describe.item(ItemCatalog.get_def(opt.item))
+				elif opt.has("relic"):
+					icon_name = RelicCatalog.get_def(opt.relic).icon
+					tip = Describe.relic(RelicCatalog.get_def(opt.relic))
+				if icon_name != "":
+					var holder := CenterContainer.new()
+					holder.custom_minimum_size = Vector2(UnitCard.WIDTH, 52)
+					holder.tooltip_text = tip
+					holder.mouse_filter = Control.MOUSE_FILTER_STOP
+					col.add_child(holder)
+					var sv := SpriteView.new()
+					sv.custom_minimum_size = Vector2(64, 64)
+					holder.add_child(sv)
+					sv.show_icon(icon_name, 1.2)
+			"upgrade":
 				var u := me.find_unit(pick.uid)
-				if not u.is_empty():
-					sv.show_unit(UnitCatalog.get_def(u.def).sprite, false, 1.3)
-			"item":
-				var it := ItemCatalog.get_def(o.id)
-				sv.show_icon(it.icon, 1.2)
-				title = it.name
-				tip = Describe.item(it)
-			"relic":
-				var r := RelicCatalog.get_def(o.id)
-				sv.show_icon(r.icon, 1.2)
-				title = r.name
-				tip = Describe.relic(r)
+				var cu := u.duplicate(true)
+				cu.cards = cu.cards + [opt.card]
+				cu.level = cu.level + 1
+				var c := UnitCard.build(UnitCatalog.get_def(u.def), cu)
+				c.extra_text = opt.card.name + "\n" + opt.card.text
+				_clickable(c, i)
+				col.add_child(c)
 			_:
-				title = o.label
-				tip = o.label
-		b.tooltip_text = tip
-		_label(b, title, Vector2(0, 110), Vector2(210, 20), 14, Color("ffd84a"))
-		var body := Label.new()
-		body.text = tip.substr(0, 300)
-		body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		body.add_theme_font_size_override("font_size", 10)
-		body.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		body.max_lines_visible = 13
-		body.custom_minimum_size = Vector2(194, 0)
-		b.add_child(body)
-		body.position = Vector2(8, 132)
-		body.size = Vector2(194, 170)
-	if pick.allow_skip:
-		_button(v, pick.get("skip_text", "Skip"), _on_pick.bind(-1))
-	if pick.kind == "champion" and me.roster.size() >= GameConfig.ROSTER_MAX:
-		var l := Label.new()
-		l.text = "Your roster is full: skip, or close this, sell a unit, and press Fight! to pick again."
-		v.add_child(l)
-		_button(v, "Close (sell a unit first)", func():
-			_clear_overlay())
+				var b := Button.new()
+				b.text = str(opt.get("label", opt.kind))
+				b.pressed.connect(_on_pick.bind(i))
+				col.add_child(b)
+	row.reset_size()
+	await get_tree().process_frame
+	if is_instance_valid(row):
+		row.reset_size()
+		row.position = (Vector2(1600, 900) - row.size) * 0.5
+
+
+func _clickable(c: Control, i: int) -> void:
+	c.gui_input.connect(func(ev):
+		if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:
+			_on_pick(i))
+	c.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+
+
+func _style_card(style: StringName, i: int) -> Control:
+	var b := Button.new()
+	b.custom_minimum_size = Vector2(UnitCard.WIDTH, 300)
+	b.focus_mode = Control.FOCUS_NONE
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color("1c1e28")
+	sb.border_color = STYLE_COLORS[style]
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(12)
+	var sbh := sb.duplicate()
+	sbh.bg_color = Color("252837")
+	b.add_theme_stylebox_override("normal", sb)
+	b.add_theme_stylebox_override("hover", sbh)
+	b.add_theme_stylebox_override("pressed", sbh)
+	b.tooltip_text = {&"interest": "+1 gold per %d banked (max %d) each round." % [GameConfig.INTEREST_PER, GameConfig.INTEREST_CAP],
+		&"bounty": "+%d gold per enemy unit killed and per unit left standing after each fight (max %d)." % [GameConfig.BOUNTY_PER_KILL, GameConfig.BOUNTY_CAP],
+		&"streak": "Bonus gold for consecutive wins or losses."}[style]
+	var g := Glyph.make(STYLE_ICONS[style], STYLE_COLORS[style], Vector2(110, 110))
+	g.position = Vector2((UnitCard.WIDTH - 110) * 0.5, 60)
+	b.add_child(g)
+	var l := Label.new()
+	l.text = String(style).capitalize()
+	l.position = Vector2(0, 210)
+	l.size = Vector2(UnitCard.WIDTH, 30)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.add_theme_font_size_override("font_size", 22)
+	b.add_child(l)
+	b.pressed.connect(_on_pick.bind(i))
+	return b
 
 
 func _on_pick(i: int) -> void:
-	_say(match_ref.resolve_pick(me, i))
-
-
-func _on_ready() -> void:
-	if not me.pending_picks.is_empty() and me.pending_picks[0].kind == "champion" and overlay == null:
-		_refresh_pick()
-		return
-	if me.assigned().is_empty() and not me.roster.is_empty():
-		match_ref.auto_assign(me)
-	var report := match_ref.end_planning()
-	selected = {}
-	_show_report(report)
-
-
-func _show_report(report: Dictionary) -> void:
-	var mine: Dictionary = {}
-	for f in report.fights:
-		if f.a == me.id or f.b == me.id:
-			mine = f
-	if mine.is_empty():
-		_show_summary(report, {})
+	var err := match_ref.resolve_pick(me, i)
+	if err != "":
+		_say(err)
 		return
 	_clear_overlay()
-	var bv := BattleView.new()
-	overlay = bv
-	add_child(bv)
-	var flip: bool = mine.b == me.id
-	var fight := mine if not flip else _flip_fight(mine)
-	var opp_name: String = mine.b_name if not flip else match_ref.players[mine.a].display
-	bv.setup(fight, "You", opp_name)
-	bv.finished.connect(func(): _show_summary(report, mine))
-	bv.play(fight)
+	refresh()
 
 
-## Mirror a fight so the human is always on the left.
-func _flip_fight(f: Dictionary) -> Dictionary:
-	var g := f.duplicate(true)
-	for ev in g.log:
-		if ev.t == "start":
-			for u in ev.units:
-				u.side = 1 - u.side
-		elif ev.t == "summon":
-			ev.unit.side = 1 - ev.unit.side
-		elif ev.t == "end" and ev.winner >= 0:
-			ev.winner = 1 - ev.winner
-		elif ev.t == "timeout":
-			ev.ratios = [ev.ratios[1], ev.ratios[0]]
-	return g
+# ---------------------------------------------------------------- fights
+
+func _start_fight() -> void:
+	if state != &"planning":
+		return
+	_clear_overlay()
+	selected = {}
+	state = &"battle"
+	_shop_card_off()
+	var report := match_ref.end_planning()
+	refresh()
+	var mine := _my_fight(report)
+	if not mine.is_empty():
+		board.play(mine.log, mine.b == me.id)
+		if board.playing:
+			await board.finished
+	_after_fight()
 
 
-func _show_summary(report: Dictionary, mine: Dictionary) -> void:
-	var v := _make_overlay()
-	_header(v, "Round %d results" % report.round)
-	if report.type == &"champion":
-		var l := Label.new()
-		l.text = "Champion round: no fights this round."
-		v.add_child(l)
+func _my_fight(report: Dictionary) -> Dictionary:
 	for f in report.fights:
-		var l := Label.new()
-		var a: String = match_ref.players[f.a].display
-		var b: String = f.b_name
-		var res := "draw" if f.winner == -1 else ((a if f.winner == 0 else b) + " wins")
-		l.text = "%s vs %s: %s, %d damage" % [a, b, res, f.damage]
-		if f == mine:
-			l.add_theme_color_override("font_color", Color("ffd84a"))
-		v.add_child(l)
-	for pid in report.get("eliminated", []):
-		var l := Label.new()
-		l.text = "%s is eliminated (#%d)" % [match_ref.players[pid].display, match_ref.players[pid].placement]
-		l.add_theme_color_override("font_color", Color("ff7070"))
-		v.add_child(l)
-	if match_ref.over:
-		var l := Label.new()
-		l.text = "GAME OVER - you finished #%d" % (me.placement if me.placement > 0 else 1)
-		l.add_theme_font_size_override("font_size", 22)
-		v.add_child(l)
-		_button(v, "New game", func():
-			_clear_overlay()
+		if f.a == me.id or f.b == me.id:
+			return f
+	return {}
+
+
+func _after_fight() -> void:
+	if not is_inside_tree():
+		return
+	_refresh_players()  # HP gauges animate the round's damage (no results screen)
+	if match_ref.over or not me.alive:
+		_game_over()
+		return
+	match_ref.next_round()
+	state = &"planning"
+	time_left = GameConfig.PLANNING_SECONDS
+	refresh()
+
+
+func _game_over() -> void:
+	state = &"over"
+	var o := _dim_overlay()
+	var win := me.alive and me.placement == 1
+	var l := Label.new()
+	l.text = "VICTORY" if win else "DEFEAT"
+	l.add_theme_font_size_override("font_size", 120)
+	l.add_theme_color_override("font_color", Color("f2c34a") if win else Color("e0566b"))
+	l.add_theme_color_override("font_outline_color", Color.BLACK)
+	l.add_theme_constant_override("outline_size", 12)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.size = Vector2(1600, 160)
+	l.position = Vector2(0, 370)
+	l.pivot_offset = Vector2(800, 80)
+	l.scale = Vector2(0.2, 0.2)
+	o.add_child(l)
+	var tw := create_tween()
+	tw.tween_property(l, "scale", Vector2.ONE, 0.5).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	o.gui_input.connect(func(ev):
+		if ev is InputEventMouseButton and ev.pressed:
 			new_game(int(Time.get_unix_time_from_system())))
-	else:
-		_button(v, "Next round", func():
-			_clear_overlay()
-			match_ref.next_round())
 
 
 # ---------------------------------------------------------------- test hook
@@ -609,15 +800,52 @@ func _show_summary(report: Dictionary, mine: Dictionary) -> void:
 func debug_autoplay_round() -> bool:
 	if match_ref.over:
 		return false
+	timer_enabled = false
 	var before := match_ref.round_no
 	_clear_overlay()
 	Bot.play(match_ref, me)
-	var report := match_ref.end_planning()
-	_show_report(report)
-	if overlay is BattleView:
-		(overlay as BattleView).skipping = true
-	_clear_overlay()
-	_show_summary(report, {})
-	_clear_overlay()
-	match_ref.next_round()
+	board.skipping = true
+	await _start_fight()
 	return match_ref.round_no == before + 1 or match_ref.over
+
+
+# ---------------------------------------------------------------- avatar
+
+## A player in the right column: ring HP gauge (animated), initials, HP badge at the bottom.
+class Avatar extends Control:
+	var initials := ""
+	var is_me := false
+	var hp_shown := 100.0
+	var hp_max := 100.0
+	var alive := true
+
+	func setup(display: String, mine: bool) -> void:
+		initials = display.substr(0, 2)
+		is_me = mine
+		size = Vector2(72, 90)
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func set_hp(hp: float, mx: float, p_alive: bool) -> void:
+		hp_max = maxf(1.0, mx)
+		alive = p_alive
+		var tw := create_tween()
+		tw.tween_method(func(v): hp_shown = v; queue_redraw(), hp_shown, hp, 0.8).set_trans(Tween.TRANS_CUBIC)
+		modulate.a = 1.0 if alive else 0.35
+
+	func _draw() -> void:
+		var c := Vector2(36, 36)
+		draw_circle(c, 30, Color("4a3f1a") if is_me else Color("2b2f45"))
+		draw_arc(c, 33, 0, TAU, 48, Color("2a2c38"), 5.0, true)
+		var frac := clampf(hp_shown / hp_max, 0.0, 1.0)
+		var col := Color("f2c34a") if is_me else (Color("4caf7a") if frac > 0.7 else Color("e07b3a"))
+		if frac > 0.0:
+			# gauge starts and ends at the bottom centre
+			draw_arc(c, 33, PI / 2, PI / 2 + TAU * frac, 48, col, 5.0, true)
+		var f := get_theme_default_font()
+		var ts := f.get_string_size(initials, HORIZONTAL_ALIGNMENT_LEFT, -1, 18)
+		draw_string(f, c + Vector2(-ts.x * 0.5, 6), initials, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("e8e8ee"))
+		var badge := Rect2(Vector2(20, 62), Vector2(32, 16))
+		draw_rect(badge, col)
+		var t := str(int(round(hp_shown)))
+		var bs := f.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, 12)
+		draw_string(f, badge.position + Vector2((32 - bs.x) * 0.5, 13), t, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("0d0e13"))

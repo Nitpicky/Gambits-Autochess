@@ -1,7 +1,8 @@
 class_name Match
 extends RefCounted
 ## The game loop for 8 local players (1 human + 7 bots, or 8 bots for tests).
-## Planning phase -> fights (PvP round-robin, PvE, or Champion pick) -> damage -> next round.
+## Planning phase -> fights (PvP round-robin or PvE) -> damage -> next round.
+## Picks: gold style at the start, unit choices on GameConfig.CHOICE_ROUNDS, upgrade paths.
 ## The UI talks only to this class; it never touches modules directly.
 
 signal changed
@@ -10,7 +11,7 @@ const BOT_NAMES := ["Aria", "Bram", "Cyra", "Dax", "Eko", "Fen", "Gale", "Hux"]
 
 var rng := RandomNumberGenerator.new()
 var round_no: int = 0
-var round_type: StringName = &"pvp"   ## pvp | pve | champion
+var round_type: StringName = &"pvp"   ## pvp | pve
 var players: Array[PlayerState] = []
 var pool: UnitPool
 var shop: Shop
@@ -19,6 +20,8 @@ var human_id: int = -1
 var over: bool = false
 var last_report: Dictionary = {}
 var ghost_specs: Dictionary = {}  ## player id -> last team spec (for ghosts)
+var round_pairs: Array = []        ## this round's PvP pairs, decided when the round starts
+var pve_team: Dictionary = {}      ## this round's monsters (PvE rounds)
 
 
 func new_game(seed_value: int, with_human: bool = true) -> void:
@@ -61,13 +64,13 @@ func alive_ids() -> Array:
 
 func start_round() -> void:
 	round_no += 1
-	if round_no == GameConfig.CHAMPION_ROUND:
-		round_type = &"champion"
-	elif GameConfig.is_pve(round_no):
+	if GameConfig.is_pve(round_no):
 		round_type = &"pve"
 	else:
 		round_type = &"pvp"
 	_update_catchup()
+	round_pairs = pairing.next_pairs(alive_ids(), rng) if round_type == &"pvp" else []
+	pve_team = PvE.monster_team(round_no, rng) if round_type == &"pve" else {}
 	for p in alive_players():
 		p.set_meta("income", Economy.pay_income(p, round_no))
 		if round_no > 1:
@@ -75,9 +78,9 @@ func start_round() -> void:
 		ShopBias.decay_lean(p)
 		shop.start_round(p)
 		if round_no == 1:
-			p.pending_picks.append(_starter_pick(p))
-		if round_type == &"champion":
-			p.pending_picks.append(_champion_pick(p))
+			p.pending_picks.append(_gold_style_pick())
+		if GameConfig.CHOICE_ROUNDS.has(round_no):
+			p.pending_picks.append(_unit_choice(p, GameConfig.CHOICE_ROUNDS[round_no]))
 	for p in alive_players():
 		if p.is_bot:
 			Bot.play(self, p)
@@ -103,31 +106,41 @@ func _update_catchup() -> void:
 
 # ---------------------------------------------------------------- picks
 
-func _starter_pick(p: PlayerState) -> Dictionary:
+## Opening pick: how this player earns extra gold. Options are shuffled, so the
+## auto-resolve (first option) when the player doesn't choose is a random style.
+func _gold_style_pick() -> Dictionary:
+	var opts: Array = GameConfig.GOLD_STYLES.map(func(s): return {"kind": "gold_style", "id": s})
+	for i in range(opts.size() - 1, 0, -1):
+		var j := rng.randi() % (i + 1)
+		var t = opts[i]
+		opts[i] = opts[j]
+		opts[j] = t
+	return {"kind": "gold_style", "title": "", "options": opts, "allow_skip": false}
+
+
+## Pick 1 of N new units of `rarity`, each paired with an item (or its unique relic for champions).
+func _unit_choice(p: PlayerState, rarity: int) -> Dictionary:
 	var bias := ShopBias.archetype_bias(p)
-	var cands: Array = UnitCatalog.by_rarity(UnitCatalog.Rarity.COMMON).filter(func(id): return pool.available(id) > 0)
+	var cands: Array = UnitCatalog.choice_units(rarity).filter(func(id): return pool.available(id) == 0 or rarity == UnitCatalog.Rarity.CHAMPION)
+	if cands.size() < GameConfig.CHOICE_OPTIONS:
+		cands = UnitCatalog.choice_units(rarity)
+	var item_rarity: int = GameConfig.CHOICE_ITEM_RARITY[mini(rarity, GameConfig.CHOICE_ITEM_RARITY.size() - 1)]
+	var items: Array = ItemCatalog.by_rarity(item_rarity)
 	var opts: Array = []
-	for i in 3:
-		var w: Array = cands.map(func(id): return ShopBias.weight(bias, &"unit", id))
-		var id = ShopBias.weighted_pick(rng, cands, w)
-		if id == null:
+	for i in GameConfig.CHOICE_OPTIONS:
+		if cands.is_empty():
 			break
-		cands.erase(id)
-		opts.append({"kind": "unit", "id": id})
-	return {"kind": "starter", "title": "Choose your starter", "options": opts, "allow_skip": false}
-
-
-func _champion_pick(p: PlayerState) -> Dictionary:
-	var bias := ShopBias.archetype_bias(p)
-	var cands: Array = UnitCatalog.by_rarity(UnitCatalog.Rarity.CHAMPION)
-	var opts: Array = []
-	for i in 3:
 		var w: Array = cands.map(func(id): return ShopBias.weight(bias, &"unit", id))
 		var id = ShopBias.weighted_pick(rng, cands, w)
 		cands.erase(id)
-		opts.append({"kind": "unit", "id": id})
-	return {"kind": "champion", "title": "Choose a Champion", "options": opts, "allow_skip": true,
-		"skip_text": "Skip: +%d gold" % GameConfig.CHAMPION_SKIP_GOLD}
+		var o := {"kind": "unit", "id": id}
+		var relic: StringName = UnitCatalog.get_def(id).relic
+		if rarity == UnitCatalog.Rarity.CHAMPION and relic != &"":
+			o["relic"] = relic
+		elif not items.is_empty():
+			o["item"] = items[rng.randi() % items.size()]
+		opts.append(o)
+	return {"kind": "choice", "rarity": rarity, "title": "", "options": opts, "allow_skip": false}
 
 
 func _upgrade_pick(u: Dictionary) -> Dictionary:
@@ -152,12 +165,20 @@ func resolve_pick(p: PlayerState, option_idx: int) -> String:
 	var o: Dictionary = pick.options[option_idx]
 	match o.kind:
 		"unit":
-			if p.roster.size() >= GameConfig.ROSTER_MAX:
+			# Round choices may go over the roster cap (the player can't sell while choosing).
+			if p.roster.size() >= GameConfig.ROSTER_MAX and pick.kind != "choice":
 				return "Roster full: sell a unit first"
 			pool.take(o.id)
+			pool.add_choice_unit(o.id)
 			var u := Shop.new_unit(p, o.id, UnitCatalog.PRICES[UnitCatalog.get_def(o.id).rarity])
-			if pick.kind == "starter":
-				auto_assign(p)
+			if p.assigned().size() < p.rank():
+				_place_new(p, u)
+			if o.has("item"):
+				p.item_bench.append(o.item)
+			if o.has("relic"):
+				Shop.add_relic(p, o.relic)
+		"gold_style":
+			p.gold_style = o.id
 		"card":
 			var u := p.find_unit(pick.uid)
 			if not u.is_empty():
@@ -211,6 +232,21 @@ func buy_xp(p: PlayerState) -> String:
 func sell_unit(p: PlayerState, uid: int) -> void:
 	shop.sell_unit(p, uid)
 	changed.emit()
+
+
+## Edit a unit's rules (gambits, in priority order). Empty = back to the unit's defaults.
+func set_rules(p: PlayerState, uid: int, rules: Array) -> void:
+	var u := p.find_unit(uid)
+	if u.is_empty():
+		return
+	u["rules"] = rules.duplicate(true)
+	changed.emit()
+
+
+## The rules a unit currently fights with (its own edits, else the unit default).
+static func rules_of(u: Dictionary) -> Array:
+	var r: Array = u.get("rules", [])
+	return r if not r.is_empty() else UnitCatalog.get_def(u.def).gambits
 
 
 func sell_item(p: PlayerState, bench_idx: int) -> void:
@@ -321,9 +357,9 @@ func end_planning() -> Dictionary:
 		ghost_specs[p.id] = p.team_spec()
 	if round_type == &"pve":
 		for p in alive_players():
-			report.fights.append(_fight(p, null, PvE.monster_team(round_no, rng)))
-	elif round_type == &"pvp":
-		for pr in pairing.next_pairs(alive_ids(), rng):
+			report.fights.append(_fight(p, null, pve_team))
+	else:
+		for pr in round_pairs:
 			var a := players[pr[0]]
 			var b: PlayerState = players[pr[1]] if pr[1] >= 0 else null
 			report.fights.append(_fight(a, b, _ghost_for(a) if b == null else {}))
@@ -331,6 +367,33 @@ func end_planning() -> Dictionary:
 	last_report = report
 	changed.emit()
 	return report
+
+
+## Who `p` fights this round: a player id, -1 for a ghost (odd count), -2 for monsters.
+func opponent_of(p: PlayerState) -> int:
+	if round_type == &"pve":
+		return -2
+	for pr in round_pairs:
+		if pr[0] == p.id:
+			return pr[1]
+		if pr[1] == p.id:
+			return pr[0]
+	return -1
+
+
+## The team `p` is about to face, for the planning-screen preview.
+func preview_spec(p: PlayerState) -> Dictionary:
+	var o := opponent_of(p)
+	if o == -2:
+		return pve_team
+	if o >= 0:
+		return players[o].team_spec()
+	return {}
+
+
+func opponent_name(p: PlayerState) -> String:
+	var o := opponent_of(p)
+	return players[o].display if o >= 0 else ("" if o == -2 else "Ghost")
 
 
 func _ghost_for(p: PlayerState) -> Dictionary:
@@ -347,8 +410,12 @@ func _fight(a: PlayerState, b: PlayerState, fixed_b: Dictionary) -> Dictionary:
 	var sim := BattleSim.new()
 	var res := sim.run(a.team_spec(), spec_b, rng.randi())
 	var fight := {"a": a.id, "b": b.id if b else -1, "b_name": spec_b.name, "winner": res.winner,
-		"survivors": res.survivors, "turns": res.turns, "log": res.log, "damage": 0}
+		"survivors": res.survivors, "turns": res.turns, "log": res.log, "damage": 0,
+		"bounty": [Economy.pay_bounty(a, res.kills[0], res.standing[0]), Economy.pay_bounty(b, res.kills[1], res.standing[1]) if b else 0]}
 	var pve := round_type == &"pve"
+	a.history.append({"round": round_no, "result": "W" if res.winner == 0 else ("L" if res.winner == 1 else "D")})
+	if b:
+		b.history.append({"round": round_no, "result": "W" if res.winner == 1 else ("L" if res.winner == 0 else "D")})
 	match res.winner:
 		0:
 			if b:
@@ -357,8 +424,6 @@ func _fight(a: PlayerState, b: PlayerState, fixed_b: Dictionary) -> Dictionary:
 				Economy.record_result(b, false)
 			if not pve:
 				Economy.record_result(a, true)
-			if pve:
-				a.pending_picks.append({"kind": "reward", "title": "PvE reward", "options": PvE.reward_options(round_no, rng, a.relics), "allow_skip": false})
 		1:
 			fight.damage = _loss_damage(res.survivors, b.rank() if b else 1)
 			a.lose_hp(fight.damage)

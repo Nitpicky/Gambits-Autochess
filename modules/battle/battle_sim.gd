@@ -32,7 +32,7 @@ func run(team_a: Dictionary, team_b: Dictionary, seed_value: int) -> Dictionary:
 	for u in units.duplicate():
 		if u.has_flag(&"zealot"):
 			var pp: int = u.pp()
-			u.get_attr(&"attack").add_percent(&"zealot", u.flag(&"zealot") * pp)
+			u.get_attr(&"attack").add_flat(&"zealot", GameConfig.ZEALOT_ATK * pp)
 			u.spend(&"pp", pp)
 	for u in units.duplicate():
 		u.emit(E.BATTLE_START, {"sim": self})
@@ -85,9 +85,6 @@ func _build_side(team: Dictionary, side: int) -> void:
 			continue
 		var eff: Dictionary = r.effect
 		match eff.type:
-			&"team_stat":
-				for u in built:
-					u.get_attr(eff.stat).add_percent(rid, eff.pct)
 			&"team_flat":
 				for u in built:
 					u.get_attr(eff.stat).add_flat(rid, eff.value)
@@ -115,15 +112,14 @@ func build_unit(spec: Dictionary, side: int) -> BattleUnit:
 	u.is_token = def.rarity == UnitCatalog.Rarity.TOKEN
 	u.tag_name = def.name
 	var scale: float = spec.get("scale", 1.0)
-	var lvl_mult := 1.0 + GameConfig.UPGRADE_STAT_BONUS * (u.level - 1)
-	u.add(Attribute.make_pool(&"hp", roundf(def.hp * lvl_mult * scale)))
-	u.add(Attribute.make(&"attack", roundf(def.atk * lvl_mult * scale), Attribute.Merge.ADD_VALUE))
-	u.add(Attribute.make(&"defense", def["def"], Attribute.Merge.ADD_VALUE))
+	var lv: int = u.level - 1
+	u.add(Attribute.make_pool(&"hp", GameConfig.round_hp(def.hp * scale) + GameConfig.UPGRADE_HP * lv))
+	u.add(Attribute.make(&"attack", roundf(def.atk * scale) + GameConfig.UPGRADE_ATK * lv, Attribute.Merge.ADD_VALUE))
 	u.add(Attribute.make(&"initiative", def.ini, Attribute.Merge.ADD_VALUE))
-	u.add(Attribute.make(&"damage_reduction", 0.0, Attribute.Merge.ADD_VALUE))
+	u.add(Attribute.make(&"damage_reduction", def.get("dr", 0.0), Attribute.Merge.ADD_VALUE))
 	u.add(Attribute.make_pool(&"ap", def.ap))
 	u.add(Attribute.make_pool(&"pp", def.pp))
-	u.gambits = def.gambits.duplicate(true)
+	u.gambits = (spec.rules if spec.has("rules") and not spec.rules.is_empty() else def.gambits).duplicate(true)
 	if def.extra_actions > 0:
 		u.add(Effects.flag(&"extra_actions", def.extra_actions))
 	for kw in def.keywords:
@@ -138,7 +134,7 @@ func build_unit(spec: Dictionary, side: int) -> BattleUnit:
 		if item.is_empty():
 			continue
 		for stat in item.stats:
-			var attr_id: StringName = {"hp": &"hp", "atk": &"attack", "def": &"defense", "ini": &"initiative", "ap": &"ap", "pp": &"pp"}[stat]
+			var attr_id: StringName = {"hp": &"hp", "atk": &"attack", "dr": &"damage_reduction", "ini": &"initiative", "ap": &"ap", "pp": &"pp"}[stat]
 			u.get_attr(attr_id).add_flat(iid, item.stats[stat])
 		var eff: Dictionary = item.effect
 		if eff.is_empty():
@@ -161,11 +157,12 @@ func build_unit(spec: Dictionary, side: int) -> BattleUnit:
 	return u
 
 
-## Upgrade cards are generic modifiers: {stats_pct, keyword, gambit, ap, pp}.
+## Upgrade cards are generic modifiers: {hp, atk (flat), keyword, gambit, ap, pp}.
 func _apply_mod(u: BattleUnit, card: Dictionary, src: StringName) -> void:
-	if card.has("stats_pct"):
-		u.get_attr(&"hp").add_percent(src, card.stats_pct)
-		u.get_attr(&"attack").add_percent(src, card.stats_pct)
+	if card.has("hp"):
+		u.get_attr(&"hp").add_flat(src, card.hp)
+	if card.has("atk"):
+		u.get_attr(&"attack").add_flat(src, card.atk)
 	if card.has("ap"):
 		u.get_attr(&"ap").add_flat(src, card.ap)
 	if card.has("pp"):
@@ -282,17 +279,37 @@ func _do_ap_gambit(u: BattleUnit, power_mult: float) -> bool:
 	return false
 
 
+## A rule (gambit) can carry up to two conditions: cond/arg and cond2/arg2. Both must hold.
 func _cond_ok(u: BattleUnit, g: Dictionary, ctx) -> bool:
-	match g.get("cond", &""):
+	return _check(u, g.get("cond", &""), g.get("arg", 0.0), g, ctx) and _check(u, g.get("cond2", &""), g.get("arg2", 0.0), g, ctx)
+
+
+func _check(u: BattleUnit, c: StringName, arg, g: Dictionary, ctx) -> bool:
+	match c:
 		&"":
 			return true
+		&"self_below":
+			return u.hp_ratio() < arg
+		&"self_above":
+			return u.hp_ratio() >= arg
+		&"enemy_below":
+			for e in enemies_of(u):
+				if e.hp_ratio() < arg:
+					return true
+			return false
+		&"front_row":
+			return u.row == 0
+		&"back_row":
+			return u.row == 1
+		&"has_ap_left":
+			return u.ap() >= int(arg)
 		&"ally_below":
 			for a in living(u.side):
-				if a.hp_ratio() < g.arg:
+				if a.hp_ratio() < arg:
 					return true
 			return false
 		&"target_below":
-			return ctx != null and ctx.target.alive and ctx.target.hp_ratio() < g.arg
+			return ctx != null and ctx.target.alive and ctx.target.hp_ratio() < arg
 		&"ally_without":
 			for a in living(u.side):
 				if not a.is_token and not a.has(g.arg_kw):
@@ -484,9 +501,11 @@ func deal_damage(src: BattleUnit, dst: BattleUnit, power: float, opts := {}) -> 
 	if ctx.cancel:
 		log_event({"t": "blocked", "u": dst.uid, "text": ctx.get("cancel_reason", "Blocked")})
 		return 0.0
-	var raw: float = src.atk() * power * maxf(0.1, ctx.mult)
-	var dmg := maxf(raw * 0.2, raw - dst.defense())
-	dmg *= 1.0 - clampf(dst.value(&"damage_reduction"), 0.0, 0.8)
+	ctx.mult += src.flag(&"dmg_bonus", 0.0)
+	var dmg: float = src.atk() * power * maxf(0.1, ctx.mult)
+	dmg += dst.max_hp() * src.flag(&"pct_hp_damage", 0.0) * power
+	var dr := dst.value(&"damage_reduction") + dst.flag(&"flat_dr", 0.0)
+	dmg *= 1.0 - clampf(dr, 0.0, 0.8)
 	dmg = roundf(dmg)
 	_apply_hp_loss(src, dst, dmg)
 	var dealt := {"sim": self, "target": dst, "amount": dmg, "melee": ctx.melee}
@@ -655,4 +674,17 @@ func _result() -> Dictionary:
 			if not u.is_token:
 				survivors += 1
 	log_event({"t": "end", "winner": w, "survivors": survivors})
-	return {"winner": w, "survivors": survivors, "turns": turn, "log": events_log}
+	var kills := [0, 0]  ## per side: enemy non-token units it killed
+	for u in units:
+		if not u.alive and not u.is_token:
+			kills[1 - u.side] += 1
+	return {"winner": w, "survivors": survivors, "turns": turn, "log": events_log, "kills": kills,
+		"standing": [_standing(0), _standing(1)]}
+
+
+func _standing(side: int) -> int:
+	var n := 0
+	for u in living(side):
+		if not u.is_token:
+			n += 1
+	return n

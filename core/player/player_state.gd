@@ -5,7 +5,7 @@ extends AttributeHolder
 ##
 ## Roster entries are plain Dictionaries (a "unit instance"):
 ## {"uid": int, "def": StringName, "level": int, "items": [ids], "cards": [card dicts],
-##  "row": int, "col": int (-1 = not assigned), "paid": int}
+##  "row": int, "col": int (-1 = not assigned), "paid": int, "rules": [gambit dicts] (empty = unit default)}
 
 var id: int = 0
 var display: String = ""
@@ -23,6 +23,7 @@ var pity: Dictionary = {}   ## archetype -> pity value
 var catchup_tier: int = 0
 var catchup_score: float = 0.0
 var pending_picks: Array = []
+var gold_style: StringName = &""  ## interest | bounty | streak (see GameConfig.GOLD_STYLES)
 var history: Array = []     ## per round: {"round", "opponent", "result", "damage"}
 var _next_uid: int = 1
 
@@ -117,7 +118,7 @@ func team_spec() -> Dictionary:
 		for i in u.items:
 			if ItemCatalog.meets_req(ItemCatalog.get_def(i), def, kws, u.row):
 				items.append(i)
-		units.append({"def": u.def, "level": u.level, "items": items, "cards": u.cards, "row": u.row, "col": u.col})
+		units.append({"def": u.def, "level": u.level, "items": items, "cards": u.cards, "row": u.row, "col": u.col, "rules": u.get("rules", [])})
 	return {"name": display, "units": units, "relics": relics.duplicate()}
 
 

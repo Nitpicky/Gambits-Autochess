@@ -6,3 +6,4 @@
 
 ## Recap
 - 2026-11-24: Created.
+- 2026-11-24: Bots handle choice picks (sell before a full-roster choice).

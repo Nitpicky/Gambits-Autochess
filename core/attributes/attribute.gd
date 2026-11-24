@@ -4,8 +4,8 @@ extends Resource
 ## Stats (HP, Attack...), statuses (Chill, Ward...), keywords (Guard, Grow...),
 ## player values (Gold, XP...) are all Attributes. Units have no hard-coded stats.
 ##
-## value() = (base + sum(flat)) * (1 + sum(percent))  -- buffs are percent only,
-## flat is used by item stats. Optional `current` for pool-like values (HP, AP).
+## value() = base + sum(flat). Every stat increase is flat (design rule: no % buffs).
+## Optional `current` for pool-like values (HP, AP).
 
 enum Merge { ADD_STACKS, ADD_VALUE, KEEP_MAX, REFRESH, REPLACE, IGNORE }
 
@@ -22,7 +22,6 @@ enum Merge { ADD_STACKS, ADD_VALUE, KEEP_MAX, REFRESH, REPLACE, IGNORE }
 @export var params: Dictionary = {}  ## free-form data for behaviours (e.g. pct per stack)
 
 var flat: Dictionary = {}     ## source -> float
-var percent: Dictionary = {}  ## source -> float (0.1 = +10%)
 var holder = null             ## AttributeHolder (untyped to avoid cyclic refs)
 
 
@@ -45,10 +44,7 @@ func value() -> float:
 	var f := base
 	for v in flat.values():
 		f += v
-	var p := 0.0
-	for v in percent.values():
-		p += v
-	return f * maxf(0.0, 1.0 + p)
+	return f
 
 
 func set_flat(source: StringName, amount: float) -> void:
@@ -59,18 +55,8 @@ func add_flat(source: StringName, amount: float) -> void:
 	_change(func(): flat[source] = flat.get(source, 0.0) + amount)
 
 
-func set_percent(source: StringName, amount: float) -> void:
-	_change(func(): percent[source] = amount)
-
-
-func add_percent(source: StringName, amount: float) -> void:
-	_change(func(): percent[source] = percent.get(source, 0.0) + amount)
-
-
 func remove_source(source: StringName) -> void:
-	_change(func():
-		flat.erase(source)
-		percent.erase(source))
+	_change(func(): flat.erase(source))
 
 
 ## Keeps `current` proportional-safe: when the max grows, current grows by the same amount.
@@ -125,6 +111,5 @@ func clone() -> Attribute:
 	for b in behaviours:
 		a.behaviours.append(b.duplicate(true))
 	a.flat = {}
-	a.percent = {}
 	a.holder = null
 	return a

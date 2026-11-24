@@ -1,6 +1,6 @@
 class_name PvE
 extends RefCounted
-## Monster teams and PvE rewards. Pure data generators.
+## Monster teams for PvE rounds. Pure data generators.
 
 const MONSTERS: Array[StringName] = [&"stone_golem", &"saberspine", &"phase_hound", &"ice_golem", &"giant_crab"]
 
@@ -23,25 +23,3 @@ static func monster_team(round_no: int, rng: RandomNumberGenerator) -> Dictionar
 			id = &"sand_panther"
 		units.append({"def": id, "row": cells[i][0], "col": cells[i][1], "scale": scale})
 	return {"name": "Monsters", "units": units, "relics": []}
-
-
-## Pick options for a PvE win.
-static func reward_options(round_no: int, rng: RandomNumberGenerator, owned_relics: Array) -> Array:
-	var early := round_no <= 3
-	var opts: Array = []
-	if early:
-		opts.append({"kind": "gold", "amount": 10, "label": "10 gold"})
-		opts.append({"kind": "item", "id": _random_item(rng, [5, 15]), "label": "Item"})
-		opts.append({"kind": "xp", "amount": 6, "label": "6 XP"})
-	else:
-		var relics: Array = RelicCatalog.all().keys().filter(func(k): return not (k in owned_relics))
-		if not relics.is_empty():
-			opts.append({"kind": "relic", "id": relics[rng.randi() % relics.size()], "label": "Relic"})
-		opts.append({"kind": "item", "id": _random_item(rng, [15, 25]), "label": "Item"})
-		opts.append({"kind": "gold", "amount": 20, "label": "20 gold"})
-	return opts
-
-
-static func _random_item(rng: RandomNumberGenerator, prices: Array) -> StringName:
-	var ids: Array = ItemCatalog.all().keys().filter(func(k): return ItemCatalog.get_def(k).price in prices)
-	return ids[rng.randi() % ids.size()]

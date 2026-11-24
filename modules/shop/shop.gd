@@ -50,7 +50,7 @@ func roll(p: PlayerState) -> void:
 		var iid = ShopBias.weighted_pick(rng, ids, w)
 		offers.append({"kind": &"item", "id": iid, "price": price, "discount": 0, "sold": false})
 	for i in GameConfig.SHOP_RELICS:
-		var ids: Array = RelicCatalog.all().keys().filter(func(k): return not (k in p.relics))
+		var ids: Array = RelicCatalog.shop_relics().filter(func(k): return not (k in p.relics))
 		if ids.is_empty():
 			break
 		var w: Array = ids.map(func(k): return ShopBias.weight(bias, &"relic", k))
@@ -154,7 +154,7 @@ func buy(p: PlayerState, idx: int) -> Dictionary:
 
 
 static func new_unit(p: PlayerState, def_id: StringName, paid: int) -> Dictionary:
-	var u := {"uid": p.new_uid(), "def": def_id, "level": 1, "items": [], "cards": [], "row": -1, "col": -1, "paid": paid}
+	var u := {"uid": p.new_uid(), "def": def_id, "level": 1, "items": [], "cards": [], "row": -1, "col": -1, "paid": paid, "rules": []}
 	p.roster.append(u)
 	return u
 

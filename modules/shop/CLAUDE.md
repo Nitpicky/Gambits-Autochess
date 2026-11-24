@@ -10,3 +10,4 @@
 
 ## Recap
 - 2026-11-24: Created.
+- 2026-11-24: Choice-only units join the shared pool when picked; champion relics never in the shop.

@@ -93,7 +93,7 @@ class RallyB extends AttributeBehaviour:
 		var u = ctx.holder
 		var heal: float = u.flag(&"rally_heal", 0.0)
 		for ally in u.sim.row_units(u.side, u.row):
-			ally.get_attr(&"attack").add_percent(&"rally", 0.1)
+			ally.get_attr(&"attack").add_flat(&"rally", GameConfig.RALLY_ATK)
 			var dr: float = ally.flag(&"rally_dr", 0.0)
 			if dr > 0.0:
 				ally.get_attr(&"damage_reduction").add_flat(&"rally", dr)
@@ -125,9 +125,9 @@ class GrowB extends AttributeBehaviour:
 
 
 static func do_grow(u) -> void:
-	var pct: float = u.flag(&"grow_pct", 0.08)
-	u.get_attr(&"attack").add_percent(&"grow", pct)
-	u.get_attr(&"hp").add_percent(&"grow", pct)
+	u.get_attr(&"attack").add_flat(&"grow", u.flag(&"grow_atk", GameConfig.GROW_ATK))
+	if GameConfig.GROW_HP > 0:
+		u.get_attr(&"hp").add_flat(&"grow", GameConfig.GROW_HP)
 	u.sim.log_event({"t": "buff", "u": u.uid, "text": "Grow", "hp": u.hp(), "max": u.max_hp()})
 
 
@@ -192,7 +192,7 @@ class ChillB extends AttributeBehaviour:
 		if ctx.status != &"chill":
 			return
 		var u = ctx.holder
-		u.get_attr(&"initiative").set_percent(&"chill", -0.1 * a.stacks)
+		u.get_attr(&"initiative").set_flat(&"chill", -GameConfig.CHILL_SPEED * a.stacks)
 		var at: int = int(ctx.source.flag(&"freeze_at", 3.0)) if ctx.source else 3
 		if a.stacks >= at and not u.has_flag(&"immune_frozen"):
 			u.remove(&"chill")
@@ -264,7 +264,7 @@ class CowardB extends AttributeBehaviour:
 		if a.params.get("done", false) or not u.alive or u.hp_ratio() >= a.params.threshold:
 			return
 		a.params["done"] = true
-		u.get_attr(&"defense").add_percent(&"coward", a.params.pct)
+		u.get_attr(&"damage_reduction").add_flat(&"coward", a.params.value)
 		if u.row == 0:
 			u.sim.move_to_back(u)
 
@@ -283,14 +283,14 @@ class RowAuraB extends AttributeBehaviour:
 	func handle(_e: StringName, ctx: Dictionary, a: Attribute) -> void:
 		var u = ctx.holder
 		for ally in u.sim.row_units(u.side, u.row):
-			ally.get_attr(a.params.stat).add_percent(&"aura", a.params.pct)
+			ally.get_attr(a.params.stat).add_flat(&"aura", a.params.value)
 
 
 class RuinB extends AttributeBehaviour:
 	func events() -> Array[StringName]: return [&"any_died"]
 	func handle(_e: StringName, ctx: Dictionary, _a: Attribute) -> void:
 		if ctx.holder.alive:
-			ctx.holder.get_attr(&"attack").add_percent(&"ruin", 0.06)
+			ctx.holder.get_attr(&"attack").add_flat(&"ruin", GameConfig.RUIN_ATK)
 
 
 class SacrificeGrowsB extends AttributeBehaviour:

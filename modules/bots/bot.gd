@@ -48,7 +48,7 @@ static func _resolve_picks(m: Match, p: PlayerState, rng: RandomNumberGenerator)
 	while not p.pending_picks.is_empty() and guard < 10:
 		guard += 1
 		var pick: Dictionary = p.pending_picks[0]
-		if pick.kind == "champion" and p.roster.size() >= GameConfig.ROSTER_MAX:
+		if pick.kind == "choice" and p.roster.size() >= GameConfig.ROSTER_MAX:
 			var worst = p.roster[0]
 			for u in p.roster:
 				if Match._value(u) < Match._value(worst):

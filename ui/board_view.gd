@@ -109,6 +109,10 @@ func _build_hit_areas() -> void:
 				b.mouse_filter = Control.MOUSE_FILTER_STOP
 				b.set_meta("cell", Vector3i(side, row, col))
 				b.gui_input.connect(_on_cell_input.bind(side, row, col))
+				b.set_drag_forwarding(
+					func(_p): return null if playing or not drag_from_cell.is_valid() else drag_from_cell.call(side, row, col),
+					func(_p, d): return not playing and can_drop_on_cell.is_valid() and can_drop_on_cell.call(side, row, col, d),
+					func(_p, d): drop_on_cell.call(side, row, col, d))
 				b.mouse_entered.connect(func(): cell_hovered.emit(side, row, col))
 				b.mouse_exited.connect(func(): cell_hovered.emit(-1, -1, -1))
 				var sb := StyleBoxEmpty.new()
@@ -116,6 +120,7 @@ func _build_hit_areas() -> void:
 					b.add_theme_stylebox_override(st, sb)
 				add_child(b)
 	resized.connect(_place_hit_areas)
+	_place_hit_areas()  # the size is usually set before _ready, so `resized` never fires for it
 
 
 func _place_hit_areas() -> void:

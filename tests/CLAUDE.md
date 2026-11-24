@@ -15,3 +15,4 @@
 - 2026-11-24: Screenshot tool captures every screen (picks, planning, battles, results, game over); fixed it racing main._ready().
 - 2026-11-24: Smoke test updated for flat stats, HP steps, gold styles, async UI round; screenshot tool walks the new screen states.
 - 2026-11-24: Screenshot tool also captures the unit card and an item/relic hover card.
+- 2026-11-24: Fixed board cells having no hit area (drops and clicks on the board did nothing); `tools/drag_probe.gd` checks drag and drop with real mouse events.

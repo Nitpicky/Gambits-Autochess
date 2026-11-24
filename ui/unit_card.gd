@@ -92,6 +92,15 @@ func _rebuild() -> void:
 	nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	nm.add_theme_font_size_override("font_size", 15)
 	_body.add_child(nm)
+	# keyword row: Melee/Ranged first, then each keyword with its own icon (hover = rule text)
+	var kw_row := HBoxContainer.new()
+	kw_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	kw_row.add_theme_constant_override("separation", 5)
+	_body.add_child(kw_row)
+	kw_row.add_child(Glyph.attack_range(UnitCatalog.attack_range(def), 26))
+	var kws0: Array = PlayerState.unit_keywords(inst) if not inst.is_empty() else def.keywords
+	for k in kws0:
+		kw_row.add_child(Glyph.keyword(k, 26))
 	_build_rules()
 	if extra_text != "":
 		var ex := Label.new()
@@ -117,13 +126,14 @@ func _rebuild() -> void:
 	rg.position = Vector2(WIDTH * 0.5 - 15, h - 16)
 	add_child(rg)
 	# factions (left edge) and archetypes (right edge)
-	var fg := Glyph.make(&"diamond", Keywords.FACTION_COLORS.get(def.faction, Color.GRAY), Vector2(18, 18))
-	fg.position = Vector2(-9, 96)
+	var fg := Glyph.faction(def.faction, 26)
+	fg.position = Vector2(-13, 92)
 	add_child(fg)
 	var kws: Array = PlayerState.unit_keywords(inst) if not inst.is_empty() else def.keywords
 	var y := 96.0
 	for a in Keywords.archetypes_of_keywords(kws):
 		var ag := Glyph.make(&"circle", ARCH_COLORS.get(a, Color.GRAY), Vector2(18, 18))
+		ag.mouse_filter = Control.MOUSE_FILTER_STOP
 		ag.position = Vector2(WIDTH - 9, y)
 		ag.tooltip_text = Keywords.ARCHETYPES[a].name
 		add_child(ag)

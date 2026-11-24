@@ -31,6 +31,43 @@ static func rarity(r: int, s: float) -> Glyph:
 	return make(RARITY_SHAPES[r], UnitCatalog.RARITY_COLORS[r], Vector2(s, s))
 
 
+## A faction emblem on a dark disc, hover shows the faction name.
+static func faction(f: StringName, s: float) -> Glyph:
+	var g := make(&"disc", Color("14151c"), Vector2(s, s))
+	g.outline = Keywords.FACTION_COLORS.get(f, Color.GRAY)
+	var e := make(StringName("f_" + String(f)), Keywords.FACTION_COLORS.get(f, Color.GRAY), Vector2(s, s) * 0.62)
+	e.position = Vector2(s, s) * 0.19
+	g.add_child(e)
+	g.mouse_filter = Control.MOUSE_FILTER_STOP
+	g.tooltip_text = Keywords.FACTION_NAMES.get(f, String(f))
+	return g
+
+
+## A keyword icon on a dark disc (faction-coloured), hover shows its name and rule.
+static func keyword(k: StringName, s: float) -> Glyph:
+	var kd: Dictionary = Keywords.KEYWORDS.get(k, {})
+	var col: Color = Keywords.FACTION_COLORS.get(kd.get("faction", &"neutral"), Color.GRAY)
+	var g := make(&"disc", Color("2b2f45"), Vector2(s, s))
+	var e := make(StringName("k_" + String(k)), col, Vector2(s, s) * 0.66)
+	e.position = Vector2(s, s) * 0.17
+	g.add_child(e)
+	g.mouse_filter = Control.MOUSE_FILTER_STOP
+	g.tooltip_text = "%s\n%s" % [kd.get("name", String(k)), kd.get("text", "")]
+	return g
+
+
+## Melee (sword) or Ranged (bow) badge, shown first in a unit's keyword row.
+static func attack_range(r: StringName, s: float) -> Glyph:
+	var g := make(&"disc", Color("2b2f45"), Vector2(s, s))
+	g.outline = Color("e8e8ee")
+	var e := make(&"k_ranged" if r == &"ranged" else &"k_melee", Color("e8e8ee"), Vector2(s, s) * 0.62)
+	e.position = Vector2(s, s) * 0.19
+	g.add_child(e)
+	g.mouse_filter = Control.MOUSE_FILTER_STOP
+	g.tooltip_text = "Ranged\nAttacks any enemy, from the back row." if r == &"ranged" else "Melee\nAttacks the enemy front row."
+	return g
+
+
 func _poly(pts: Array) -> PackedVector2Array:
 	var out := PackedVector2Array()
 	for p in pts:
@@ -49,6 +86,85 @@ func _ngon(n: int, rot: float, r := 0.5) -> PackedVector2Array:
 func _draw() -> void:
 	var c := size * 0.5
 	match kind:
+		&"disc":
+			draw_circle(c, minf(size.x, size.y) * 0.5, color)
+		# ---- faction emblems
+		&"f_lyonar":  ## sun
+			draw_circle(c, size.x * 0.22, color)
+			for i in 8:
+				var a := TAU * i / 8
+				draw_line(c + Vector2(cos(a), sin(a)) * size.x * 0.3, c + Vector2(cos(a), sin(a)) * size.x * 0.48, color, 2.0, true)
+		&"f_vanar":  ## ice crystal
+			draw_colored_polygon(_poly([Vector2(0.5, 0), Vector2(0.72, 0.35), Vector2(0.5, 1), Vector2(0.28, 0.35)]), color)
+			draw_colored_polygon(_poly([Vector2(0.12, 0.3), Vector2(0.26, 0.45), Vector2(0.18, 0.8)]), color)
+			draw_colored_polygon(_poly([Vector2(0.88, 0.3), Vector2(0.74, 0.45), Vector2(0.82, 0.8)]), color)
+		&"f_songhai":  ## crescent moon
+			draw_circle(c, size.x * 0.46, color)
+			draw_circle(c + size * Vector2(0.2, -0.12), size.x * 0.38, Color("14151c"))
+		&"f_magmar":  ## three claw marks
+			for i in 3:
+				var x := 0.25 + i * 0.25
+				draw_colored_polygon(_poly([Vector2(x - 0.02, 0.0), Vector2(x + 0.09, 0.05), Vector2(x - 0.03, 1.0), Vector2(x - 0.1, 0.9)]), color)
+		&"f_abyssian":  ## horns
+			draw_colored_polygon(_poly([Vector2(0.05, 0.0), Vector2(0.3, 0.45), Vector2(0.45, 0.6), Vector2(0.3, 0.75), Vector2(0.12, 0.45)]), color)
+			draw_colored_polygon(_poly([Vector2(0.95, 0.0), Vector2(0.7, 0.45), Vector2(0.55, 0.6), Vector2(0.7, 0.75), Vector2(0.88, 0.45)]), color)
+			draw_circle(c + Vector2(0, size.y * 0.22), size.x * 0.14, color)
+		&"f_vetruvian":  ## pyramid
+			draw_colored_polygon(_poly([Vector2(0.5, 0.05), Vector2(1, 0.92), Vector2(0, 0.92)]), color)
+			draw_line(size * Vector2(0.5, 0.05), size * Vector2(0.62, 0.92), Color("14151c"), 1.5, true)
+		# ---- keywords
+		&"k_guard":  ## shield
+			draw_colored_polygon(_poly([Vector2(0.1, 0.05), Vector2(0.9, 0.05), Vector2(0.9, 0.55), Vector2(0.5, 1), Vector2(0.1, 0.55)]), color)
+		&"k_rally":  ## banner
+			draw_rect(Rect2(size * Vector2(0.15, 0.0), size * Vector2(0.1, 1.0)), color)
+			draw_colored_polygon(_poly([Vector2(0.25, 0.05), Vector2(0.95, 0.2), Vector2(0.25, 0.55)]), color)
+		&"k_ward":  ## bubble
+			draw_arc(c, size.x * 0.44, 0, TAU, 32, color, 2.5, true)
+			draw_arc(c, size.x * 0.24, PI * 1.1, PI * 1.6, 8, color, 2.0, true)
+		&"k_chill":  ## snowflake
+			for i in 3:
+				var a := PI / 2 + PI * i / 3
+				draw_line(c + Vector2(cos(a), sin(a)) * size.x * 0.48, c - Vector2(cos(a), sin(a)) * size.x * 0.48, color, 2.0, true)
+		&"k_swift":  ## double chevron
+			for x in [0.1, 0.45]:
+				draw_colored_polygon(_poly([Vector2(x, 0.1), Vector2(x + 0.18, 0.1), Vector2(x + 0.45, 0.5), Vector2(x + 0.18, 0.9), Vector2(x, 0.9), Vector2(x + 0.27, 0.5)]), color)
+		&"k_mark":  ## crosshair
+			draw_arc(c, size.x * 0.34, 0, TAU, 32, color, 2.0, true)
+			draw_line(size * Vector2(0.5, 0.0), size * Vector2(0.5, 0.35), color, 2.0)
+			draw_line(size * Vector2(0.5, 0.65), size * Vector2(0.5, 1.0), color, 2.0)
+			draw_line(size * Vector2(0.0, 0.5), size * Vector2(0.35, 0.5), color, 2.0)
+			draw_line(size * Vector2(0.65, 0.5), size * Vector2(1.0, 0.5), color, 2.0)
+		&"k_grow":  ## sprout
+			draw_line(size * Vector2(0.5, 1.0), size * Vector2(0.5, 0.35), color, 2.5)
+			draw_colored_polygon(_poly([Vector2(0.5, 0.5), Vector2(0.1, 0.3), Vector2(0.15, 0.05), Vector2(0.45, 0.25)]), color)
+			draw_colored_polygon(_poly([Vector2(0.5, 0.4), Vector2(0.9, 0.15), Vector2(0.95, 0.45), Vector2(0.6, 0.55)]), color)
+		&"k_feast":  ## fangs
+			draw_colored_polygon(_poly([Vector2(0.05, 0.1), Vector2(0.45, 0.1), Vector2(0.28, 0.95)]), color)
+			draw_colored_polygon(_poly([Vector2(0.55, 0.1), Vector2(0.95, 0.1), Vector2(0.72, 0.95)]), color)
+		&"k_sacrifice":  ## blood drop
+			draw_circle(c + Vector2(0, size.y * 0.15), size.x * 0.32, color)
+			draw_colored_polygon(_poly([Vector2(0.5, 0.0), Vector2(0.8, 0.55), Vector2(0.2, 0.55)]), color)
+		&"k_deathwatch":  ## eye
+			draw_colored_polygon(_poly([Vector2(0.0, 0.5), Vector2(0.3, 0.2), Vector2(0.7, 0.2), Vector2(1.0, 0.5), Vector2(0.7, 0.8), Vector2(0.3, 0.8)]), color)
+			draw_circle(c, size.x * 0.16, Color("14151c"))
+		&"k_construct":  ## cube
+			draw_colored_polygon(_ngon(6, -PI / 2, 0.48), color)
+			draw_line(c, c + Vector2(0, size.y * 0.48), Color("14151c"), 1.5)
+			draw_line(c, c + Vector2(-size.x * 0.42, -size.y * 0.24), Color("14151c"), 1.5)
+			draw_line(c, c + Vector2(size.x * 0.42, -size.y * 0.24), Color("14151c"), 1.5)
+		&"k_melee":  ## sword
+			draw_line(size * Vector2(0.85, 0.05), size * Vector2(0.25, 0.65), color, 3.0, true)
+			draw_line(size * Vector2(0.12, 0.48), size * Vector2(0.45, 0.82), color, 2.5, true)
+			draw_line(size * Vector2(0.28, 0.68), size * Vector2(0.08, 0.92), color, 3.0, true)
+		&"k_ranged":  ## bow and arrow
+			draw_arc(size * Vector2(0.25, 0.5), size.x * 0.48, -PI * 0.42, PI * 0.42, 16, color, 2.5, true)
+			draw_line(size * Vector2(0.38, 0.06), size * Vector2(0.38, 0.94), color, 1.2, true)
+			draw_line(size * Vector2(0.1, 0.5), size * Vector2(0.95, 0.5), color, 2.0, true)
+			draw_colored_polygon(_poly([Vector2(1.0, 0.5), Vector2(0.8, 0.38), Vector2(0.8, 0.62)]), color)
+		&"k_fortify":  ## tower
+			draw_rect(Rect2(size * Vector2(0.2, 0.3), size * Vector2(0.6, 0.7)), color)
+			for x in [0.2, 0.44, 0.68]:
+				draw_rect(Rect2(size * Vector2(x, 0.1), size * Vector2(0.12, 0.2)), color)
 		&"circle":
 			draw_circle(c, minf(size.x, size.y) * 0.5, color)
 		&"ring":

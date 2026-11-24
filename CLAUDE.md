@@ -35,3 +35,4 @@ Modules never reach into `ui`. Only `modules/match` orchestrates other modules.
 ## Recap
 - 2026-11-24: First playable prototype: attribute core, battle sim, economy, shop/bias, upgrades, match loop, bots, UI, smoke test.
 - 2026-11-24: Redesigned game from the UX phase (screens canvas + notes doc): one screen (take B), fights on the board, gold styles, unit choice rounds, editable rules, flat stats, HP in steps of 25, no Defense.
+- 2026-11-24: Playtest fixes: full-roster bench, drag and drop, battle narrator, item/relic hover cards, faction/keyword/range icons, fights until wipe, softer PvE.

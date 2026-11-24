@@ -19,3 +19,4 @@ PROTOTYPE: data lives in code for fast iteration; can move to .tres later.
 ## Recap
 - 2026-11-24: Initial catalogs matching the plan doc (attack values raised ~45% so fights resolve in ~3 cycles).
 - 2026-11-24: Rarities common/rare/epic/legendary/champion with new colours; HP scaled and rounded to 25, Attack scaled; Defense removed (roles and items give % damage reduction); 18 choice-only units; 12 champion relics; % buffs turned flat; new items Battle Fury, Giant Slayer, Bulwark; config: gold styles, CHOICE_ROUNDS, flat buff numbers.
+- 2026-11-24: Fights last until a side is wiped (cycle/turn caps are only stalemate guards); PvE sizes and scales moved to config and lowered; UnitCatalog.attack_range().

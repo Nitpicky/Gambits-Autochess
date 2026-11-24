@@ -3,10 +3,12 @@ extends Control
 ## Planning, fights and picks all happen on it: the board plays the fight, picks dim it.
 ## Built entirely in code; talks only to Match (modules/match/match.gd).
 ##
-## Controls: click a shop tile to buy. Click a bench or board unit to select it (its card opens
-## beside it, rules editable), then click a board cell to place it. Right-click a board unit to
-## send it back to the bench; right-click a bench unit to sell it. Click an item, then a unit, to
-## equip it; right-click an item to sell it. The fight starts when the timer runs out (Space = now).
+## Controls (drag and drop): the bench lists ALL your units (the ones on the board are lit).
+## Drag a unit onto a board cell to place it (swaps with an occupant), off the board onto the bench
+## to take it off, onto the shop to sell it. Drag an item onto a unit to equip it, an equipped item
+## back to the stash to take it off, an item onto the shop to sell it. Drag a shop offer out to buy it
+## (or click it). A click on a unit opens its card (rules editable). Fights start when the timer runs
+## out (Space = now). A narrator line at the top tells what happens during the fight.
 
 const SHOP_TILE := Vector2(130, 130)
 const STYLE_ICONS := {&"interest": &"coin_bag", &"bounty": &"blade", &"streak": &"flame"}
@@ -14,7 +16,7 @@ const STYLE_COLORS := {&"interest": Color("f2c34a"), &"bounty": Color("e0566b"),
 
 var match_ref: Match
 var me: PlayerState
-var selected: Dictionary = {}   ## {"type": "unit", "uid"} | {"type": "item", "idx"}
+var selected: Dictionary = {}   ## {"type": "unit", "uid"}: the unit whose card is open
 var state: StringName = &"planning"  ## planning | battle | over
 var time_left: float = GameConfig.PLANNING_SECONDS
 var timer_enabled := true        ## the smoke test turns the real-time timer off
@@ -41,6 +43,9 @@ var msg_label := Label.new()
 var overlay: Control = null
 var avatars: Dictionary = {}  ## player id -> Avatar
 var _shop_hover: Control = null
+var narrator := RichTextLabel.new()
+var _last_gold := -1
+var _hover_card: Control = null
 
 
 func _ready() -> void:
@@ -60,6 +65,7 @@ func new_game(seed_value: int) -> void:
 	match_ref.changed.connect(refresh)
 	match_ref.new_game(seed_value, true)
 	me = match_ref.human()
+	_last_gold = -1
 	selected = {}
 	state = &"planning"
 	time_left = GameConfig.PLANNING_SECONDS
@@ -98,7 +104,16 @@ func _build_layout() -> void:
 	timer_bar.add_theme_stylebox_override("background", tb_bg)
 	timer_bar.add_theme_stylebox_override("fill", tb_fill)
 	add_child(timer_bar)
-	msg_label.position = Vector2(500, 82)
+	narrator.position = Vector2(350, 84)
+	narrator.size = Vector2(900, 34)
+	narrator.bbcode_enabled = true
+	narrator.fit_content = false
+	narrator.scroll_active = false
+	narrator.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	narrator.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	narrator.add_theme_font_size_override("normal_font_size", 20)
+	add_child(narrator)
+	msg_label.position = Vector2(500, 652)
 	msg_label.size = Vector2(600, 20)
 	msg_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	msg_label.add_theme_color_override("font_color", Color("ffb060"))
@@ -109,7 +124,10 @@ func _build_layout() -> void:
 	board.size = bs
 	add_child(board)
 	board.cell_pressed.connect(_on_cell)
-	board.cell_right_pressed.connect(_on_cell_right)
+	board.narrate.connect(func(t): narrator.text = "[center]%s[/center]" % t if t != "" else "")
+	board.drag_from_cell = _drag_from_cell
+	board.can_drop_on_cell = _can_drop_on_cell
+	board.drop_on_cell = _drop_on_cell
 	board.cell_hovered.connect(_on_cell_hover)
 	count_label.position = board.position + Vector2(30, 96)
 	count_label.add_theme_font_size_override("font_size", 16)
@@ -118,9 +136,14 @@ func _build_layout() -> void:
 	person.position = Vector2(-20, 2)
 	count_label.add_child(person)
 	# bench (zigzag) and items, left of the board
-	bench_box.position = Vector2(board.position.x - 200, 140)
+	bench_box.position = Vector2(board.position.x - 200, 130)
+	bench_box.size = Vector2(214, 540)
+	_drop_zone(bench_box, &"bench")
 	add_child(bench_box)
 	items_box.position = Vector2(board.position.x - 280, 160)
+	items_box.custom_minimum_size = Vector2(60, 400)
+	items_box.mouse_filter = Control.MOUSE_FILTER_STOP
+	_drop_zone(items_box, &"stash")
 	items_box.add_theme_constant_override("separation", 8)
 	add_child(items_box)
 	# shop line + shop + rank/xp, bottom centre
@@ -145,6 +168,8 @@ func _build_layout() -> void:
 	coin.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	shop_line.add_child(coin)
 	shop_box.position = Vector2(386, 728)
+	_drop_zone(shop_box, &"shop")
+	_drop_zone(shop_line, &"shop")
 	shop_box.add_theme_constant_override("separation", 12)
 	add_child(shop_box)
 	var rk := VBoxContainer.new()
@@ -200,6 +225,7 @@ func _process(delta: float) -> void:
 func refresh() -> void:
 	if me == null:
 		return
+	_hover_off()
 	_refresh_relics()
 	_refresh_rounds()
 	_refresh_players()
@@ -227,7 +253,7 @@ func _refresh_relics() -> void:
 		sv.size = Vector2(44, 44)
 		sv.position = Vector2(i * 46, 22 if i % 2 == 1 else 0)
 		sv.mouse_filter = Control.MOUSE_FILTER_STOP
-		sv.tooltip_text = Describe.relic(r)
+		_hover(sv, func(): return InfoCard.build(&"relic", r))
 		relics_box.add_child(sv)
 		sv.show_icon(r.icon, 0.9)
 
@@ -307,44 +333,66 @@ func _refresh_board() -> void:
 	board.queue_redraw()
 
 
+## The bench lists ALL your units; the ones on the board are lit (gold ring + board pip), the others dimmed.
 func _refresh_bench() -> void:
 	_clear(bench_box)
-	var bench: Array = me.roster.filter(func(u): return u.col < 0)
-	for i in bench.size():
-		var u: Dictionary = bench[i]
+	for i in me.roster.size():
+		var u: Dictionary = me.roster[i]
 		var d := UnitCatalog.get_def(u.def)
+		var on_board: bool = u.col >= 0
 		var cell := Control.new()
 		cell.size = Vector2(96, 118)
-		cell.position = Vector2((i % 2) * 118, (i / 2) * 136 + (60 if i % 2 == 1 else 0))
+		cell.position = Vector2((i % 2) * 118, (i / 2) * 128 + (56 if i % 2 == 1 else 0))
+		cell.mouse_filter = Control.MOUSE_FILTER_PASS
 		bench_box.add_child(cell)
-		# item slots: 2 rows of hexes above the frame, bottom row fills first
+		# item slots: 2 rows of hexes above the frame, bottom row fills first; drag one out to unequip
 		var cap := PlayerState.item_capacity(u)
-		for s in cap:
-			var row := s / 3
-			var colx := s % 3
-			var hx := Glyph.make(&"hex_slot", Color("2a2c38") if s >= u.items.size() else Color(0, 0, 0, 0), Vector2(22, 24))
+		for sl in cap:
+			var row := sl / 3
+			var colx := sl % 3
+			var hx := Glyph.make(&"hex_slot", Color("2a2c38") if sl >= u.items.size() else Color(0, 0, 0, 0), Vector2(22, 24))
 			hx.position = Vector2(15 + colx * 24, 26 - row * 22)
 			cell.add_child(hx)
-			if s < u.items.size():
-				var it := ItemCatalog.get_def(u.items[s])
+			if sl < u.items.size():
+				var it := ItemCatalog.get_def(u.items[sl])
+				hx.mouse_filter = Control.MOUSE_FILTER_STOP
 				var isv := SpriteView.new()
 				isv.size = Vector2(22, 24)
 				hx.add_child(isv)
 				isv.show_icon(it.icon, 0.35)
-		var b := Button.new()
+				_hover(hx, func(): return InfoCard.build(&"item", it))
+				var uid: int = u.uid
+				var slot: int = sl
+				hx.set_drag_forwarding(
+					func(_p): return _start_drag(hx, {"type": "equipped", "uid": uid, "slot": slot}, it.icon, true),
+					func(_p, dd): return _can_drop_unit(uid, dd),
+					func(_p, dd): _drop_on_unit(uid, dd))
+		var b := Control.new()
 		b.position = Vector2(18, 54)
 		b.size = Vector2(60, 60)
-		b.flat = true
-		b.focus_mode = Control.FOCUS_NONE
+		b.mouse_filter = Control.MOUSE_FILTER_STOP
+		b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		var sel: bool = selected.get("type") == "unit" and selected.uid == u.uid
-		var frame := Glyph.make(&"circle", Color("1c1e28"), Vector2(60, 60))
+		var frame := Glyph.make(&"circle", Color("2b2f45") if on_board else Color("16171e"), Vector2(60, 60))
 		frame.outline = Color("f2c34a") if sel else UnitCatalog.RARITY_COLORS[d.rarity]
 		b.add_child(frame)
 		var sv := SpriteView.new()
 		sv.size = Vector2(60, 60)
 		frame.add_child(sv)
 		sv.show_unit(d.sprite, false, 0.75)
-		b.gui_input.connect(_on_bench_input.bind(u.uid))
+		if not on_board:
+			sv.modulate = Color(0.6, 0.6, 0.65)
+		else:
+			var pip := Glyph.make(&"diamond", Color("f2c34a"), Vector2(14, 14))
+			pip.position = Vector2(48, 46)
+			pip.tooltip_text = "On the board"
+			b.add_child(pip)
+		var uid2: int = u.uid
+		b.gui_input.connect(_on_unit_click.bind(uid2))
+		b.set_drag_forwarding(
+			func(_p): return _start_drag(b, {"type": "unit", "uid": uid2}, d.sprite, false),
+			func(_p, dd): return _can_drop_unit(uid2, dd),
+			func(_p, dd): _drop_on_unit(uid2, dd))
 		cell.add_child(b)
 
 
@@ -352,19 +400,20 @@ func _refresh_items() -> void:
 	_clear(items_box)
 	for i in me.item_bench.size():
 		var it := ItemCatalog.get_def(me.item_bench[i])
-		var b := Button.new()
+		var b := Control.new()
 		b.custom_minimum_size = Vector2(56, 56)
-		b.flat = true
-		b.focus_mode = Control.FOCUS_NONE
-		b.tooltip_text = Describe.item(it)
+		b.mouse_filter = Control.MOUSE_FILTER_STOP
+		b.mouse_default_cursor_shape = Control.CURSOR_DRAG
 		var sv := SpriteView.new()
 		sv.size = Vector2(56, 56)
 		b.add_child(sv)
 		sv.show_icon(it.icon, 0.8)
-		if selected.get("type") == "item" and selected.idx == i:
-			var ring := Glyph.make(&"ring", Color("f2c34a"), Vector2(56, 56))
-			b.add_child(ring)
-		b.gui_input.connect(_on_item_input.bind(i))
+		_hover(b, func(): return InfoCard.build(&"item", it))
+		var idx := i
+		b.set_drag_forwarding(
+			func(_p): return _start_drag(b, {"type": "item", "idx": idx}, it.icon, true),
+			func(_p, dd): return _can_drop_zone(&"stash", dd),
+			func(_p, dd): _drop_zone_do(&"stash", dd))
 		items_box.add_child(b)
 
 
@@ -386,8 +435,11 @@ func _refresh_shop() -> void:
 			b.add_theme_stylebox_override(st, sb)
 		b.pressed.connect(_on_offer.bind(i))
 		shop_box.add_child(b)
+		b.set_drag_forwarding(func(_p): return null, func(_p, dd): return _can_drop_zone(&"shop", dd), func(_p, dd): _drop_zone_do(&"shop", dd))
 		if o.sold:
 			continue
+		var drag_icon := ""
+		var drag_unit := false
 		var name := ""
 		var rar := 0
 		var icon := Control.new()
@@ -407,6 +459,8 @@ func _refresh_shop() -> void:
 				sv.size = Vector2(66, 66)
 				circle.add_child(sv)
 				sv.show_unit(d.sprite, false, 0.85)
+				drag_icon = d.sprite
+				drag_unit = true
 				b.mouse_entered.connect(_shop_card.bind(b, d))
 				b.mouse_exited.connect(_shop_card_off)
 				if not me.find_by_def(o.id).is_empty():
@@ -415,7 +469,8 @@ func _refresh_shop() -> void:
 				var it := ItemCatalog.get_def(o.id)
 				name = it.name
 				rar = it.rarity
-				b.tooltip_text = Describe.item(it)
+				_hover(b, func(): return InfoCard.build(&"item", it), true)
+				drag_icon = it.icon
 				var sv := SpriteView.new()
 				sv.size = Vector2(66, 66)
 				icon.add_child(sv)
@@ -424,11 +479,20 @@ func _refresh_shop() -> void:
 				var r := RelicCatalog.get_def(o.id)
 				name = r.name
 				rar = r.rarity
-				b.tooltip_text = Describe.relic(r)
+				_hover(b, func(): return InfoCard.build(&"relic", r), true)
+				drag_icon = r.icon
 				var sv := SpriteView.new()
 				sv.size = Vector2(66, 66)
 				icon.add_child(sv)
 				sv.show_icon(r.icon, 0.9)
+		if not dim:
+			var oi := i
+			var di := drag_icon
+			var du := drag_unit
+			b.set_drag_forwarding(
+				func(_p): return _start_drag(b, {"type": "offer", "idx": oi}, di, not du),
+				func(_p, dd): return _can_drop_zone(&"shop", dd),
+				func(_p, dd): _drop_zone_do(&"shop", dd))
 		var badge := Glyph.rarity(rar, 16)
 		badge.position = Vector2(6, 6)
 		b.add_child(badge)
@@ -452,6 +516,9 @@ func _refresh_shop() -> void:
 		b.add_child(pc)
 	# shop line
 	gold_label.text = str(me.gold())
+	if _last_gold >= 0 and me.gold() > _last_gold:
+		_gold_pop(me.gold() - _last_gold)
+	_last_gold = me.gold()
 	var rc := Economy.reroll_cost(me)
 	reroll_btn.text = ""
 	reroll_btn.tooltip_text = "Reroll (%d)" % rc
@@ -542,15 +609,12 @@ func _deselect() -> void:
 
 func _on_offer(i: int) -> void:
 	_shop_card_off()
+	_hover_off()
 	_say(match_ref.buy(me, i))
 
 
+## Click (no drag) on a unit: open / close its card.
 func _select_unit(uid: int) -> void:
-	if selected.get("type") == "item":
-		_say(match_ref.equip(me, selected.idx, uid))
-		selected = {}
-		refresh()
-		return
 	if selected.get("type") == "unit" and selected.uid == uid:
 		selected = {}
 	else:
@@ -558,55 +622,200 @@ func _select_unit(uid: int) -> void:
 	refresh()
 
 
-func _on_bench_input(ev: InputEvent, uid: int) -> void:
-	if state != &"planning" or not (ev is InputEventMouseButton and ev.pressed):
-		return
-	if ev.button_index == MOUSE_BUTTON_LEFT:
+func _on_unit_click(ev: InputEvent, uid: int) -> void:
+	if state == &"planning" and ev is InputEventMouseButton and not ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:
 		_select_unit(uid)
-	elif ev.button_index == MOUSE_BUTTON_RIGHT:
-		selected = {}
-		match_ref.sell_unit(me, uid)
-
-
-func _on_item_input(ev: InputEvent, i: int) -> void:
-	if state != &"planning" or not (ev is InputEventMouseButton and ev.pressed):
-		return
-	if ev.button_index == MOUSE_BUTTON_LEFT:
-		selected = {} if selected.get("type") == "item" and selected.idx == i else {"type": "item", "idx": i}
-		refresh()
-	elif ev.button_index == MOUSE_BUTTON_RIGHT:
-		selected = {}
-		match_ref.sell_item(me, i)
 
 
 func _on_cell(side: int, row: int, col: int) -> void:
 	if state != &"planning" or side != 0:
 		return
 	var occ := me.unit_at(row, col)
-	if selected.get("type") == "unit":
-		var u := me.find_unit(selected.uid)
-		if not occ.is_empty() and occ.uid == u.get("uid", -1):
-			selected = {}
-			refresh()
-			return
-		_say(match_ref.assign(me, selected.uid, row, col))
-		selected = {}
-		refresh()
-	elif not occ.is_empty():
+	if occ.is_empty():
+		_deselect()
+	else:
 		_select_unit(occ.uid)
-
-
-func _on_cell_right(side: int, row: int, col: int) -> void:
-	if state != &"planning" or side != 0:
-		return
-	var occ := me.unit_at(row, col)
-	if not occ.is_empty():
-		selected = {}
-		match_ref.assign(me, occ.uid, -1, -1)
 
 
 func _on_cell_hover(_side: int, _row: int, _col: int) -> void:
 	pass
+
+
+# ---------------------------------------------------------------- drag and drop
+# Drag data: {"type": "unit", "uid"} | {"type": "item", "idx"} (stash) | {"type": "equipped", "uid", "slot"}
+# | {"type": "offer", "idx"} (shop). Drop zones: board cells, bench units, the bench, the stash, the shop.
+
+func _start_drag(src: Control, data: Dictionary, icon: String, is_icon: bool):
+	if state != &"planning" or overlay != null:
+		return null
+	_hover_off()
+	_shop_card_off()
+	var p := Control.new()
+	var sv := SpriteView.new()
+	sv.size = Vector2(80, 80)
+	sv.position = Vector2(-40, -40)
+	p.add_child(sv)
+	if is_icon:
+		sv.show_icon(icon, 0.8)
+	else:
+		sv.show_unit(icon, false, 1.0)
+	p.modulate = Color(1, 1, 1, 0.85)
+	src.set_drag_preview(p)
+	return data
+
+
+func _drag_from_cell(side: int, row: int, col: int):
+	if side != 0:
+		return null
+	var occ := me.unit_at(row, col)
+	if occ.is_empty():
+		return null
+	return _start_drag(board, {"type": "unit", "uid": occ.uid}, UnitCatalog.get_def(occ.def).sprite, false)
+
+
+func _can_drop_on_cell(side: int, row: int, col: int, d) -> bool:
+	if side != 0 or state != &"planning" or not (d is Dictionary):
+		return false
+	var occ := me.unit_at(row, col)
+	match d.get("type"):
+		"unit", "offer":
+			return true
+		"item", "equipped":
+			return not occ.is_empty()
+	return false
+
+
+func _drop_on_cell(_side: int, row: int, col: int, d: Dictionary) -> void:
+	var occ := me.unit_at(row, col)
+	match d.type:
+		"unit":
+			_say(match_ref.assign(me, d.uid, row, col))
+		"offer":
+			var o: Dictionary = me.shop_offers[d.idx]
+			var before := me.roster.size()
+			var err := match_ref.buy(me, d.idx)
+			_say(err)
+			if err == "" and o.kind == &"unit" and me.roster.size() > before:
+				_say(match_ref.assign(me, me.roster[-1].uid, row, col))
+		_:
+			if not occ.is_empty():
+				_drop_on_unit(occ.uid, d)
+	refresh()
+
+
+func _can_drop_unit(_uid: int, d) -> bool:
+	if state != &"planning" or not (d is Dictionary):
+		return false
+	return d.get("type") in ["unit", "item", "equipped", "offer"]
+
+
+## Dropped on a bench unit: items equip to it; a unit dropped on the bench leaves the board.
+func _drop_on_unit(uid: int, d: Dictionary) -> void:
+	match d.type:
+		"item":
+			_say(match_ref.equip(me, d.idx, uid))
+		"equipped":
+			if d.uid == uid:
+				return
+			match_ref.unequip(me, d.uid, d.slot)
+			var err := match_ref.equip(me, me.item_bench.size() - 1, uid)
+			_say(err)
+		"unit", "offer":
+			_drop_zone_do(&"bench", d)
+	refresh()
+
+
+func _drop_zone(c: Control, zone: StringName) -> void:
+	c.mouse_filter = Control.MOUSE_FILTER_STOP
+	c.set_drag_forwarding(func(_p): return null, func(_p, d): return _can_drop_zone(zone, d), func(_p, d): _drop_zone_do(zone, d))
+
+
+func _can_drop_zone(zone: StringName, d) -> bool:
+	if state != &"planning" or overlay != null or not (d is Dictionary):
+		return false
+	match zone:
+		&"shop":
+			return d.get("type") in ["unit", "item", "equipped"]
+		&"bench":
+			return d.get("type") == "unit" or d.get("type") == "offer"
+		&"stash":
+			return d.get("type") == "equipped" or d.get("type") == "offer"
+	return false
+
+
+func _drop_zone_do(zone: StringName, d: Dictionary) -> void:
+	match zone:
+		&"shop":  # sell
+			match d.type:
+				"unit":
+					selected = {}
+					match_ref.sell_unit(me, d.uid)
+				"item":
+					match_ref.sell_item(me, d.idx)
+				"equipped":
+					match_ref.unequip(me, d.uid, d.slot)
+					match_ref.sell_item(me, me.item_bench.size() - 1)
+		&"bench":
+			if d.type == "unit":
+				var u := me.find_unit(d.uid)
+				if not u.is_empty() and u.col >= 0:
+					match_ref.assign(me, d.uid, -1, -1)
+			elif d.type == "offer":
+				_say(match_ref.buy(me, d.idx))
+		&"stash":
+			if d.type == "equipped":
+				match_ref.unequip(me, d.uid, d.slot)
+			elif d.type == "offer":
+				_say(match_ref.buy(me, d.idx))
+	refresh()
+
+
+# ---------------------------------------------------------------- hover cards
+
+## Shows a card (built by `make`) next to `c` while the mouse is over it.
+func _hover(c: Control, make: Callable, above := false) -> void:
+	if c.mouse_filter == Control.MOUSE_FILTER_IGNORE:
+		c.mouse_filter = Control.MOUSE_FILTER_PASS
+	c.mouse_entered.connect(func():
+		_hover_off()
+		if not is_instance_valid(c) or not c.is_inside_tree():
+			return
+		var card: Control = make.call()
+		card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card_layer.add_child(card)  # _ready() lays it out and sets its final size
+		var r := c.get_global_rect()
+		var pos: Vector2
+		if above:
+			pos = Vector2(r.get_center().x - card.size.x * 0.5, r.position.y - card.size.y - 12)
+		else:
+			pos = Vector2(r.end.x + 12, r.get_center().y - card.size.y * 0.5)
+			if pos.x + card.size.x > 1480:
+				pos.x = r.position.x - card.size.x - 12
+		card.position = Vector2(clampf(pos.x, 8, 1592 - card.size.x), clampf(pos.y, 8, 892 - card.size.y))
+		_hover_card = card)
+	c.mouse_exited.connect(_hover_off)
+
+
+func _hover_off() -> void:
+	if is_instance_valid(_hover_card):
+		_hover_card.queue_free()
+	_hover_card = null
+
+
+func _gold_pop(n: int) -> void:
+	var l := Label.new()
+	l.text = "+%d" % n
+	l.add_theme_font_size_override("font_size", 22)
+	l.add_theme_color_override("font_color", Color("f2c34a"))
+	l.add_theme_color_override("font_outline_color", Color.BLACK)
+	l.add_theme_constant_override("outline_size", 5)
+	l.position = shop_line.position + Vector2(shop_line.size.x - 70, -6)
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(l)
+	var tw := create_tween()
+	tw.tween_property(l, "position:y", l.position.y - 40, 1.2)
+	tw.parallel().tween_property(l, "modulate:a", 0.0, 1.2).set_delay(0.4)
+	tw.tween_callback(l.queue_free)
 
 
 # ---------------------------------------------------------------- picks
@@ -647,17 +856,16 @@ func _show_pick() -> void:
 				_clickable(c, i)
 				col.add_child(c)
 				var icon_name := ""
-				var tip := ""
 				if opt.has("item"):
 					icon_name = ItemCatalog.get_def(opt.item).icon
-					tip = Describe.item(ItemCatalog.get_def(opt.item))
 				elif opt.has("relic"):
 					icon_name = RelicCatalog.get_def(opt.relic).icon
-					tip = Describe.relic(RelicCatalog.get_def(opt.relic))
 				if icon_name != "":
 					var holder := CenterContainer.new()
 					holder.custom_minimum_size = Vector2(UnitCard.WIDTH, 52)
-					holder.tooltip_text = tip
+					var o_kind: StringName = &"item" if opt.has("item") else &"relic"
+					var o_def: Dictionary = ItemCatalog.get_def(opt.item) if opt.has("item") else RelicCatalog.get_def(opt.relic)
+					_hover(holder, func(): return InfoCard.build(o_kind, o_def))
 					holder.mouse_filter = Control.MOUSE_FILTER_STOP
 					col.add_child(holder)
 					var sv := SpriteView.new()

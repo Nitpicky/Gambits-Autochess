@@ -8,13 +8,13 @@ const MONSTERS: Array[StringName] = [&"stone_golem", &"saberspine", &"phase_houn
 static func monster_team(round_no: int, rng: RandomNumberGenerator) -> Dictionary:
 	var count: int
 	var scale: float
-	if round_no <= 3:
-		count = [2, 3, 3][round_no - 1]
-		scale = [0.45, 0.55, 0.7][round_no - 1]
+	if round_no <= GameConfig.PVE_EARLY.size():
+		count = GameConfig.PVE_EARLY[round_no - 1][0]
+		scale = GameConfig.PVE_EARLY[round_no - 1][1]
 	else:
-		var n := (round_no - GameConfig.PVE_FROM) / GameConfig.PVE_EVERY
-		count = mini(6, 4 + n)
-		scale = 1.15 + 0.25 * n
+		var n := maxi(0, (round_no - GameConfig.PVE_FROM) / GameConfig.PVE_EVERY)
+		count = mini(6, GameConfig.PVE_LATE_COUNT + n)
+		scale = GameConfig.PVE_LATE_SCALE + GameConfig.PVE_LATE_SCALE_STEP * n
 	var units: Array = []
 	var cells: Array = [[0, 0], [0, 1], [0, 2], [1, 0], [1, 1], [1, 2]]
 	for i in count:

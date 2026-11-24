@@ -6,9 +6,9 @@ extends Control
 ## The perspective is faked in 2D: tiles are projected trapezoids, sprites stay upright.
 
 signal cell_pressed(side: int, row: int, col: int)
-signal cell_right_pressed(side: int, row: int, col: int)
 signal cell_hovered(side: int, row: int, col: int)  ## side -1 = left the board
 signal finished
+signal narrate(text: String)  ## BBCode line describing the current action (shown at the top of the screen)
 
 const TILE := Vector2(165, 150)
 const GAP := 10.0
@@ -25,6 +25,16 @@ var units_layer := Control.new()
 var fx_layer := Control.new()
 var nodes: Dictionary = {}   ## key -> {"root", "sprite", "bar", "side"}  (key = uid in battle, "r_c_s" in planning)
 var _flip := false
+var _names: Dictionary = {}    ## uid -> [name, side shown]
+var _actor = null              ## uid of the unit acting now
+var _line := ""                ## narrator line being built for the current action
+## Drag and drop hooks, set by the screen: (side, row, col) -> drag data | null; (side, row, col, data) -> bool; -> void
+var drag_from_cell: Callable
+var can_drop_on_cell: Callable
+var drop_on_cell: Callable
+
+const C_MINE := "f4f4f4"
+const C_FOE := "ff7a7a"
 
 
 func _ready() -> void:
@@ -127,11 +137,8 @@ func _place_hit_areas() -> void:
 func _on_cell_input(ev: InputEvent, side: int, row: int, col: int) -> void:
 	if playing:
 		return
-	if ev is InputEventMouseButton and ev.pressed:
-		if ev.button_index == MOUSE_BUTTON_LEFT:
-			cell_pressed.emit(side, row, col)
-		elif ev.button_index == MOUSE_BUTTON_RIGHT:
-			cell_right_pressed.emit(side, row, col)
+	if ev is InputEventMouseButton and not ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:
+		cell_pressed.emit(side, row, col)
 
 
 # ---------------------------------------------------------------- units
@@ -204,6 +211,9 @@ func play(fight_log: Array, flip: bool) -> void:
 	_flip = flip
 	playing = true
 	selected = Vector3i(-1, -1, -1)
+	_names.clear()
+	_actor = null
+	_line = ""
 	queue_redraw()
 	clear_units()
 	for ev in fight_log:
@@ -215,6 +225,9 @@ func play(fight_log: Array, flip: bool) -> void:
 	if not skipping and is_inside_tree():
 		await get_tree().create_timer(0.6 / speed).timeout
 	playing = false
+	_actor = null
+	queue_redraw()
+	narrate.emit("")
 	finished.emit()
 
 
@@ -251,55 +264,133 @@ func _bar(ev: Dictionary) -> void:
 		nodes[ev.u].bar.set_hp(ev.hp, ev.max)
 
 
+func _nm(uid) -> String:
+	if not _names.has(uid):
+		return "?"
+	var n: Array = _names[uid]
+	return "[color=#%s]%s[/color]" % [C_MINE if n[1] == 0 else C_FOE, n[0]]
+
+
+func _say(part: String, fresh := false) -> void:
+	_line = part if fresh else (_line + "   " + part)
+	if not skipping:
+		narrate.emit(_line)
+
+
+## A short line from the attacker to its target and a red flash on the target.
+func _strike_fx(src, dst, col: Color) -> void:
+	if skipping or not nodes.has(src) or not nodes.has(dst) or src == dst:
+		return
+	var a: Control = nodes[src].root
+	var b: Control = nodes[dst].root
+	var ln := Line2D.new()
+	ln.width = 4.0
+	ln.default_color = col
+	ln.add_point(a.position + Vector2(95, 90) * a.scale.x)
+	ln.add_point(b.position + Vector2(95, 90) * b.scale.x)
+	fx_layer.add_child(ln)
+	var tw := create_tween()
+	tw.tween_property(ln, "modulate:a", 0.0, 0.45 / speed)
+	tw.tween_callback(ln.queue_free)
+
+
+func _flash(uid, col: Color) -> void:
+	if skipping or not nodes.has(uid):
+		return
+	var sv: Control = nodes[uid].sprite
+	sv.modulate = col
+	var tw := create_tween()
+	tw.tween_property(sv, "modulate", Color.WHITE, 0.35 / speed)
+
+
 func _apply(ev: Dictionary) -> float:
 	match ev.t:
 		"start":
 			for u in ev.units:
 				_spawn(u.uid, _info(u), true)
-			return 0.4
+				_names[u.uid] = [u.name, _side(u.side)]
+			_say("Fight!", true)
+			return 0.8
 		"act":
+			_actor = ev.u
+			queue_redraw()
+			_say("%s  %s%s" % [_nm(ev.u), ev.text, "  [color=#5aa9e6](reaction)[/color]" if ev.get("reaction", false) else ""], not ev.get("reaction", false))
 			if nodes.has(ev.u):
 				nodes[ev.u].sprite.play(&"attack")
 				if not skipping:
 					var r: Control = nodes[ev.u].root
+					var home := r.position
 					var tw := create_tween()
-					var dx := 14.0 if nodes[ev.u].side == 0 else -14.0
-					tw.tween_property(r, "position:x", r.position.x + dx, 0.08 / speed)
-					tw.tween_property(r, "position:x", r.position.x, 0.12 / speed)
-			return 0.35
+					var dx := 18.0 if nodes[ev.u].side == 0 else -18.0
+					tw.tween_property(r, "position:x", home.x + dx, 0.1 / speed)
+					tw.tween_property(r, "position:x", home.x, 0.15 / speed)
+			return 0.45
 		"hit":
 			_bar(ev)
 			if nodes.has(ev.u):
 				nodes[ev.u].sprite.play(&"hit")
+			_strike_fx(ev.get("src"), ev.u, Color(1, 0.85, 0.4, 0.9))
+			_flash(ev.u, Color(1, 0.4, 0.4))
 			_float(ev.u, "-%d" % ev.amount, Color("ff6060"), ev.amount >= 20)
-			return 0.25
+			var why: String = ev.get("text", "")
+			_say("→ %s [color=#ff6060]−%d[/color]%s" % [_nm(ev.u), ev.amount, (" (%s)" % why) if why != "" else ""])
+			return 0.5
 		"heal":
 			_bar(ev)
+			_strike_fx(ev.get("src"), ev.u, Color(0.45, 1, 0.45, 0.9))
+			_flash(ev.u, Color(0.5, 1, 0.5))
 			_float(ev.u, "+%d" % ev.amount, Color("70ff70"))
-			return 0.2
+			_say("→ %s [color=#70ff70]+%d[/color]" % [_nm(ev.u), ev.amount])
+			return 0.45
 		"blocked":
-			_float(ev.u, "0", Color("a0d8ff"))
-			return 0.2
+			_float(ev.u, ev.get("text", "Blocked"), Color("a0d8ff"))
+			_say("→ %s [color=#a0d8ff]%s[/color]" % [_nm(ev.u), ev.get("text", "Blocked")])
+			return 0.45
 		"buff":
 			_bar(ev)
-			return 0.05
+			_float(ev.u, ev.get("text", ""), Color("f2c34a"))
+			_say("%s [color=#f2c34a]%s[/color]" % [_nm(ev.u), ev.get("text", "")])
+			return 0.3
 		"status":
-			return 0.05
+			_float(ev.u, ev.status, Color("c8a8ff"))
+			_say("%s [color=#c8a8ff]%s[/color]" % [_nm(ev.u), ev.status])
+			return 0.25
 		"death":
 			if nodes.has(ev.u):
 				nodes[ev.u].sprite.play(&"death", false)
+				if nodes[ev.u].bar:
+					nodes[ev.u].bar.visible = false
 				var tw := create_tween()
-				tw.tween_property(nodes[ev.u].root, "modulate:a", 0.0, 0.6 / speed)
-			return 0.35
+				tw.tween_interval(0.3 / speed)
+				tw.tween_property(nodes[ev.u].root, "modulate:a", 0.0, 0.5 / speed)
+			_say("%s [color=#8a8da0]falls[/color]" % _nm(ev.u))
+			return 0.6
 		"summon":
 			_spawn(ev.unit.uid, _info(ev.unit), true)
-			return 0.25
+			_names[ev.unit.uid] = [ev.unit.name, _side(ev.unit.side)]
+			_say("%s [color=#f2c34a]appears[/color]" % _nm(ev.unit.uid))
+			return 0.35
 		"move":
 			if nodes.has(ev.u):
 				nodes[ev.u].row = ev.row
 				nodes[ev.u].col = ev.col
-				_place(nodes[ev.u])
-			return 0.2
+				var n: Dictionary = nodes[ev.u]
+				var foot := cell_foot(n.side, n.row, n.col)
+				var s := _cell_scale(n.col)
+				if skipping:
+					_place(n)
+				else:
+					var tw := create_tween()
+					tw.tween_property(n.root, "position", foot - Vector2(95, 150) * s, 0.25 / speed)
+			return 0.3
+		"cycle":
+			_say("[color=#8a8da0]Everyone recovers AP and PP[/color]", true)
+			return 0.5
 		"end":
-			return 0.0
+			_actor = null
+			queue_redraw()
+			var w: int = ev.get("winner", -1)
+			var mine_won := w >= 0 and _side(w) == 0
+			_say("[color=#%s]%s[/color]" % ["f2c34a" if mine_won else ("e0566b" if w >= 0 else "c8c8d8"), "Won" if mine_won else ("Lost" if w >= 0 else "Draw")], true)
+			return 0.6
 	return 0.0

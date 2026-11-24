@@ -55,6 +55,12 @@ const DISCOUNT_GOLD := 5
 const PVE_ROUNDS := [1, 2, 3]
 const PVE_EVERY := 5
 const PVE_FROM := 15
+## PvE monster teams. Early rounds: [count, stat scale] for rounds 1..3 (you field 1-2 units then).
+const PVE_EARLY := [[1, 0.5], [1, 0.65], [2, 0.6]]
+## Later PvE (round PVE_FROM, then every PVE_EVERY): count = BASE + n, scale = BASE + STEP x n (n = 0, 1, ...).
+const PVE_LATE_COUNT := 3
+const PVE_LATE_SCALE := 0.9
+const PVE_LATE_SCALE_STEP := 0.15
 ## Unit choice rounds (pick 1 of 3 new units + paired item/relic), offered when the round starts.
 ## 16 = right after the round-15 PvE fight. PROTOTYPE: temporary schedule.
 const CHOICE_ROUNDS := {5: 1, 10: 2, 16: 4, 20: 3}  ## round -> UnitCatalog.Rarity (RARE, EPIC, CHAMPION, LEGENDARY)
@@ -89,8 +95,8 @@ const CHILL_SPEED := 1     ## Speed lost per Chill stack
 const ZEALOT_ATK := 3      ## Attack per unspent PP
 
 # Battle
-const MAX_BATTLE_CYCLES := 4   ## AP/PP refill cycles before HP% decides
-const MAX_BATTLE_TURNS := 40
+const MAX_BATTLE_CYCLES := 30  ## AP/PP refill cycles: fights go on until a side is wiped; this is only a stalemate guard
+const MAX_BATTLE_TURNS := 200  ## stalemate guard only
 
 
 static func is_pve(round_no: int) -> bool:

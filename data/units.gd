@@ -109,6 +109,11 @@ static func _u(id: StringName, nm: String, faction: StringName, rarity: int, rol
 	_cache[id] = d
 
 
+## &"melee" or &"ranged": how the unit attacks by default (its role's basic action).
+static func attack_range(d: Dictionary) -> StringName:
+	return &"ranged" if ROLE_DEFAULT_GAMBIT.get(d.get("role", &"striker"), {}).get("action", &"strike") == &"shoot" else &"melee"
+
+
 static func _build() -> void:
 	var C := Rarity.COMMON; var R := Rarity.RARE; var E := Rarity.EPIC; var L := Rarity.LEGENDARY
 	var CH := Rarity.CHAMPION; var T := Rarity.TOKEN; var M := Rarity.MONSTER

@@ -52,6 +52,18 @@ func _init() -> void:
 		if m.round_type == &"pvp" and m.round_no >= 6 and not battle_done:
 			await _frames(5)
 			await _save("04_planning_later")
+			main._select_unit(main.me.assigned()[0].uid)
+			await _frames(5)
+			await _save("04b_unit_card")
+			main.selected = {}
+			main.refresh()
+			if main.items_box.get_child_count() > 0:
+				main.items_box.get_child(0).mouse_entered.emit()
+			elif main.relics_box.get_child_count() > 0:
+				main.relics_box.get_child(0).mouse_entered.emit()
+			await _frames(5)
+			await _save("04c_item_hover")
+			main._hover_off()
 			main._start_fight()
 			await _frames(90)
 			await _save("07_battle")

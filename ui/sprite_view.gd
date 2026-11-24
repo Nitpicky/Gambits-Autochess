@@ -42,6 +42,10 @@ func clear() -> void:
 func play(anim: StringName, then_idle := true) -> void:
 	if sprite.sprite_frames == null or not sprite.sprite_frames.has_animation(anim):
 		return
+	# Duelyst frames come with every animation looping: one-shot animations must not loop,
+	# or an attacking/hit/dead unit keeps replaying it forever.
+	if anim != &"idle" and anim != &"breathing":
+		sprite.sprite_frames.set_animation_loop(anim, false)
 	sprite.play(anim)
 	if then_idle and anim != &"idle" and anim != &"death":
 		if not sprite.animation_finished.is_connected(_back_to_idle):

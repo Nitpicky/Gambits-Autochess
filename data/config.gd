@@ -97,6 +97,13 @@ const ZEALOT_ATK := 3      ## Attack per unspent PP
 # Battle
 const MAX_BATTLE_CYCLES := 30  ## AP/PP refill cycles: fights go on until a side is wiped; this is only a stalemate guard
 const MAX_BATTLE_TURNS := 200  ## stalemate guard only
+## Overtime: the fight timer is OVERTIME_TURN turns. After it, healing is cut and every hit ignores
+## damage reduction and grows by OVERTIME_DMG_STEP per overtime turn. Playback speeds up per action.
+const OVERTIME_TURN := 9  ## ~30% of fights reach overtime (measured on a bot game)
+const OVERTIME_HEAL_MULT := 0.25
+const OVERTIME_DMG_STEP := 0.3
+const OVERTIME_SPEEDUP := 0.08   ## playback speed +8% per action in overtime
+const OVERTIME_MAX_SPEED := 5.0
 
 
 static func is_pve(round_no: int) -> bool:

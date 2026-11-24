@@ -125,6 +125,7 @@ func _build_layout() -> void:
 	add_child(board)
 	board.cell_pressed.connect(_on_cell)
 	board.narrate.connect(func(t): narrator.text = "[center]%s[/center]" % t if t != "" else "")
+	board.fight_clock.connect(_on_fight_clock)
 	board.drag_from_cell = _drag_from_cell
 	board.can_drop_on_cell = _can_drop_on_cell
 	board.drop_on_cell = _drop_on_cell
@@ -234,7 +235,8 @@ func refresh() -> void:
 	_refresh_items()
 	_refresh_shop()
 	_refresh_card()
-	timer_bar.value = maxf(0.0, time_left)
+	if state == &"planning":
+		timer_bar.value = maxf(0.0, time_left)
 	if state == &"planning" and overlay == null and not me.pending_picks.is_empty():
 		_show_pick()
 
@@ -975,8 +977,25 @@ func _after_fight() -> void:
 		return
 	match_ref.next_round()
 	state = &"planning"
+	_reset_timer_bar()
 	time_left = GameConfig.PLANNING_SECONDS
 	refresh()
+
+
+## During a fight the timer bar counts turns down to overtime, then turns red.
+func _on_fight_clock(turn: int, ot: int) -> void:
+	timer_bar.max_value = GameConfig.OVERTIME_TURN
+	timer_bar.value = maxf(0.0, GameConfig.OVERTIME_TURN - turn + 1) if ot == 0 else GameConfig.OVERTIME_TURN
+	var fill := StyleBoxFlat.new()
+	fill.bg_color = Color("ff5a3c") if ot > 0 else Color("e8e8ee")
+	timer_bar.add_theme_stylebox_override("fill", fill)
+
+
+func _reset_timer_bar() -> void:
+	timer_bar.max_value = GameConfig.PLANNING_SECONDS
+	var fill := StyleBoxFlat.new()
+	fill.bg_color = Color("f2c34a")
+	timer_bar.add_theme_stylebox_override("fill", fill)
 
 
 func _game_over() -> void:

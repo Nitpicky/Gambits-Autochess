@@ -226,9 +226,16 @@ func _winner() -> int:
 
 # ---------------------------------------------------------------- turn flow
 
+## Overtime turns so far (0 = still within the fight timer).
+func overtime() -> int:
+	return maxi(0, turn - GameConfig.OVERTIME_TURN)
+
+
 func _play_turn() -> void:
 	turn += 1
 	log_event({"t": "turn", "n": turn})
+	if overtime() > 0:
+		log_event({"t": "overtime", "n": overtime()})
 	for u in living():
 		u.acted_this_turn = false
 		u.emit(E.TURN_START, {"sim": self})
@@ -504,8 +511,12 @@ func deal_damage(src: BattleUnit, dst: BattleUnit, power: float, opts := {}) -> 
 	ctx.mult += src.flag(&"dmg_bonus", 0.0)
 	var dmg: float = src.atk() * power * maxf(0.1, ctx.mult)
 	dmg += dst.max_hp() * src.flag(&"pct_hp_damage", 0.0) * power
-	var dr := dst.value(&"damage_reduction") + dst.flag(&"flat_dr", 0.0)
-	dmg *= 1.0 - clampf(dr, 0.0, 0.8)
+	var ot := overtime()
+	if ot > 0:  # overtime: damage reduction is ignored and hits keep growing
+		dmg *= 1.0 + GameConfig.OVERTIME_DMG_STEP * ot
+	else:
+		var dr := dst.value(&"damage_reduction") + dst.flag(&"flat_dr", 0.0)
+		dmg *= 1.0 - clampf(dr, 0.0, 0.8)
 	dmg = roundf(dmg)
 	_apply_hp_loss(src, dst, dmg)
 	var dealt := {"sim": self, "target": dst, "amount": dmg, "melee": ctx.melee}
@@ -564,6 +575,8 @@ func _on_death(dead: BattleUnit, killer: BattleUnit) -> void:
 func heal(src: BattleUnit, dst: BattleUnit, amount: float) -> void:
 	if not dst.alive or amount <= 0.0:
 		return
+	if overtime() > 0:
+		amount *= GameConfig.OVERTIME_HEAL_MULT
 	var before := dst.hp()
 	dst.set_current(&"hp", before + roundf(amount))
 	var got := dst.hp() - before

@@ -8,6 +8,7 @@ extends Control
 signal cell_pressed(side: int, row: int, col: int)
 signal cell_hovered(side: int, row: int, col: int)  ## side -1 = left the board
 signal finished
+signal fight_clock(turn: int, overtime: int)  ## for the fight timer bar
 signal narrate(text: String)  ## BBCode line describing the current action (shown at the top of the screen)
 
 const TILE := Vector2(165, 150)
@@ -27,7 +28,8 @@ var nodes: Dictionary = {}   ## key -> {"root", "sprite", "bar", "side"}  (key =
 var _flip := false
 var _names: Dictionary = {}    ## uid -> [name, side shown]
 var _actor = null              ## uid of the unit acting now
-var _line := ""                ## narrator line being built for the current action
+var _line := ""
+var _overtime := 0                ## narrator line being built for the current action
 ## Drag and drop hooks, set by the screen: (side, row, col) -> drag data | null; (side, row, col, data) -> bool; -> void
 var drag_from_cell: Callable
 var can_drop_on_cell: Callable
@@ -217,6 +219,8 @@ func play(fight_log: Array, flip: bool) -> void:
 	playing = true
 	selected = Vector3i(-1, -1, -1)
 	_names.clear()
+	_overtime = 0
+	speed = 1.0
 	_actor = null
 	_line = ""
 	queue_redraw()
@@ -316,7 +320,17 @@ func _apply(ev: Dictionary) -> float:
 				_names[u.uid] = [u.name, _side(u.side)]
 			_say("Fight!", true)
 			return 0.8
+		"turn":
+			fight_clock.emit(ev.n, _overtime)
+			return 0.0
+		"overtime":
+			_overtime = ev.n
+			fight_clock.emit(GameConfig.OVERTIME_TURN + ev.n, ev.n)
+			_say("[color=#ff5a3c]OVERTIME %s[/color]  [color=#8a8da0]heals cut, hits ignore armour and grow[/color]" % ("!" if ev.n == 1 else "x%d" % ev.n), true)
+			return 0.5 if ev.n == 1 else 0.2
 		"act":
+			if _overtime > 0:
+				speed = minf(GameConfig.OVERTIME_MAX_SPEED, speed * (1.0 + GameConfig.OVERTIME_SPEEDUP))
 			_actor = ev.u
 			queue_redraw()
 			_say("%s  %s%s" % [_nm(ev.u), ev.text, "  [color=#5aa9e6](reaction)[/color]" if ev.get("reaction", false) else ""], not ev.get("reaction", false))

@@ -17,3 +17,4 @@
 - 2026-11-24: Screenshot tool also captures the unit card and an item/relic hover card.
 - 2026-11-24: Fixed board cells having no hit area (drops and clicks on the board did nothing); `tools/drag_probe.gd` checks drag and drop with real mouse events.
 - 2026-11-24: Smoke test fights every kit unit with each upgrade and checks most kit actions get used; drag probe checks rule-row reordering.
+- 2026-11-27: Smoke test uses roster ids and checks keyword merging, 144 units and every sprite; tools/balance_probe.gd prints fight length and faction win rates.

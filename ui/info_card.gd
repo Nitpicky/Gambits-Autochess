@@ -81,8 +81,8 @@ func _make(kind: StringName, d: Dictionary) -> void:
 		var req := ItemCatalog.req_text(d)
 		if req != "":
 			lines.append("Requires " + req)
-	elif not d.get("needs", {}).is_empty():
-		lines.append("On with %d+ %s units." % [d.needs.count, Keywords.FACTION_NAMES[d.needs.faction]])
+	elif d.get("effect", {}).get("faction", &"") != &"":
+		lines.append("Faction relic: %s units." % Keywords.FACTION_NAMES[d.effect.faction])
 	txt.text = "\n".join(lines)
 	body.add_child(txt)
 	var h := 14.0 + body.get_combined_minimum_size().y + 26.0

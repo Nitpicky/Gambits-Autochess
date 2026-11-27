@@ -91,21 +91,18 @@ static func unit_keywords(u: Dictionary) -> Array:
 	var def := UnitCatalog.get_def(u.def)
 	var out: Array = def.keywords.duplicate()
 	for c in u.cards:
-		if c.has("keyword") and not (c.keyword in out):
-			out.append(c.keyword)
+		for k in c.get("keywords", []):
+			if not (StringName(k) in out):
+				out.append(StringName(k))
 	for i in u.items:
-		var it := ItemCatalog.get_def(i)
-		if it.effect.get("type", &"") == &"keyword" and not (it.effect.keyword in out):
-			out.append(it.effect.keyword)
+		for k in ItemCatalog.get_def(i).get("keywords", []):
+			if not (k in out):
+				out.append(k)
 	return out
 
 
 static func item_capacity(u: Dictionary) -> int:
-	var n := GameConfig.ITEM_SLOTS
-	for i in u.items:
-		if ItemCatalog.get_def(i).effect.get("type", &"") == &"extra_slot":
-			n += 1
-	return n
+	return GameConfig.ITEM_SLOTS
 
 
 ## Battle-ready team spec for BattleSim.
@@ -118,7 +115,7 @@ func team_spec() -> Dictionary:
 		for i in u.items:
 			if ItemCatalog.meets_req(ItemCatalog.get_def(i), def, kws, u.row):
 				items.append(i)
-		units.append({"def": u.def, "level": u.level, "items": items, "cards": u.cards, "row": u.row, "col": u.col, "rules": u.get("rules", [])})
+		units.append({"def": u.def, "uid": u.uid, "perm": u.get("perm", {}), "level": u.level, "items": items, "cards": u.cards, "row": u.row, "col": u.col, "rules": u.get("rules", [])})
 	return {"name": display, "units": units, "relics": relics.duplicate()}
 
 

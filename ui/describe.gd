@@ -97,12 +97,20 @@ static func gambit(g: Dictionary) -> String:
 static func unit_def(def: Dictionary, inst: Dictionary = {}) -> String:
 	var lines: Array[String] = []
 	var lvl: int = inst.get("level", 1)
-	lines.append("%s%s  [%s %s, %s]" % [def.name, " (upgraded)" if lvl > 1 else "", Keywords.FACTION_NAMES[def.faction], UnitCatalog.RARITY_NAMES[def.rarity], String(def.role).capitalize()])
+	lines.append("%s%s  [%s %s, %s]" % [def.name, " (upgraded)" if lvl > 1 else "", Keywords.FACTION_NAMES[def.faction], UnitCatalog.RARITY_NAMES[def.rarity], String(def.role)])
 	var kws: Array = PlayerState.unit_keywords(inst) if not inst.is_empty() else def.keywords
 	for k in kws:
-		lines.append("%s: %s" % [Keywords.kw_name(k), Keywords.KEYWORDS[k].text])
+		if Keywords.kw_text(k) != "":
+			lines.append("%s: %s" % [Keywords.kw_name(k), Keywords.kw_text(k)])
 	if def.passive_text != "":
 		lines.append(def.passive_text)
+	if def.get("relic_name", "") != "":
+		lines.append("Relic, %s: %s" % [def.relic_name, def.relic_text])
+	for c in inst.get("cards", []):
+		lines.append("Rank-up, %s: %s" % [c.get("name", "?"), c.get("text", "")])
+	var perm: Dictionary = inst.get("perm", {})
+	if int(perm.get("atk", 0)) > 0:
+		lines.append("Permanent: +%d Attack" % int(perm.atk * GameConfig.ATK_UNIT))
 	if def.get("dr", 0.0) > 0.0:
 		lines.append("Takes %d%% less damage." % int(def.dr * 100))
 	return "\n".join(lines)
@@ -129,6 +137,4 @@ static func item(it: Dictionary) -> String:
 
 static func relic(r: Dictionary) -> String:
 	var s := "%s\n%s" % [r.name, r.text]
-	if not r.needs.is_empty():
-		s += "\nOn with %d+ %s units." % [r.needs.count, Keywords.FACTION_NAMES[r.needs.faction]]
 	return s

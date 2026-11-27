@@ -21,3 +21,4 @@ PROTOTYPE placeholder UI, built entirely in code so it is cheap to throw away.
 - 2026-11-24: Board cell hit areas are now placed in _ready (they had zero size, so board drops and clicks did nothing).
 - 2026-11-24: Fight timer: the top bar drains over FIGHT_SECONDS (event durations from GameConfig.EVENT_SECONDS), turns red in overtime; playback speeds up per action in overtime; narrator announces it.
 - 2026-11-24: Unit card rules: kit action names + cost pips + hover text; drag a row to reorder, pick conditions from a list (MenuButton), + lists the unit's actions.
+- 2026-11-27: New roster: card stats include rank-up/relic stats and permanent Attack; tooltips show kit text, relic, rank-ups; keyword glyphs fall back to two letters; board plays "transform" (sprite swap) and revives.

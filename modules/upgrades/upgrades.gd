@@ -1,41 +1,12 @@
 class_name Upgrades
 extends RefCounted
-## Upgrade cards offered when a unit levels up: one per path (Deepen / Bridge / Subvert).
-## Cards are generic modifier dicts consumed by BattleSim._apply_mod:
-## {"hp", "atk" (flat), "ap", "pp", "keyword", "gambit"} + display fields.
-## PROTOTYPE: cards are generic per path, not hand-written per unit.
+## Upgrade cards offered when a unit levels up: the unit's 3 hand-written rank-ups from the roster kits.
+## Card = {"type": "kit", "id", "name", "text", "mod": {kw, kw_del, acts, acts_del, trig, trig_del, stats, flags}},
+## applied by BattleSim._apply_mod (actions merged by Kits.actions_for).
 
 
-static func cards_for(def_id: StringName, rng: RandomNumberGenerator) -> Array:
-	if Kits.has_kit(def_id):
-		return Kits.upgrades(def_id)  # hand-written per unit
-	var def := UnitCatalog.get_def(def_id)
-	var out: Array = []
-	# Deepen: more of what it already does.
-	var res := "pp" if def.pp >= def.ap else "ap"
-	var deepen := {"type": "deepen", "name": "Deepen", "hp": GameConfig.HP_STEP * 2, "atk": 3, res: 1,
-		"text": "+%d HP, +3 Attack, +1 %s." % [GameConfig.HP_STEP * 2, res.to_upper()]}
-	out.append(deepen)
-	# Bridge: a keyword from a neighbouring faction.
-	var pool: Array = []
-	for f in Keywords.neighbours(def.faction):
-		for k in Keywords.faction_keywords(f):
-			if not (k in def.keywords):
-				pool.append(k)
-	if pool.is_empty():
-		pool = Keywords.KEYWORDS.keys().filter(func(k): return not (k in def.keywords))
-	var kw: StringName = pool[rng.randi() % pool.size()]
-	out.append({"type": "bridge", "name": "Bridge: " + Keywords.kw_name(kw), "keyword": kw,
-		"text": "Gains %s (%s). %s" % [Keywords.kw_name(kw), Keywords.FACTION_NAMES[Keywords.KEYWORDS[kw].faction], Keywords.KEYWORDS[kw].text]})
-	# Subvert: a new role.
-	match def.role:
-		&"tank", &"bruiser":
-			out.append({"type": "subvert", "name": "Subvert: Cleaver", "gambit": {"kind": &"ap", "action": &"row_strike", "power": 0.6},
-				"text": "AP: hits a whole enemy row for 60% Attack instead of one target."})
-		&"striker", &"ranged":
-			out.append({"type": "subvert", "name": "Subvert: Field Medic", "pp": 1, "gambit": {"kind": &"pp", "trigger": &"ally_damaged", "cond": &"target_below", "arg": 0.5, "action": &"heal", "power": 0.15},
-				"text": "+1 PP. PP: when an ally drops below 50%, heals it 15%."})
-		_:
-			out.append({"type": "subvert", "name": "Subvert: Retribution", "pp": 1, "gambit": {"kind": &"pp", "trigger": &"ally_damaged", "action": &"deathwatch_strike", "power": 0.5},
-				"text": "+1 PP. PP: when an ally is hit, strikes a random enemy for 50% Attack (spends PP, not AP)."})
+static func cards_for(def_id: StringName, _rng: RandomNumberGenerator) -> Array:
+	var out := Kits.upgrades(def_id)
+	if out.is_empty():  # PROTOTYPE: fallback for a unit without rank-ups
+		out.append({"type": "kit", "id": "stats", "name": "Veteran", "text": "+1 HP, +1 Attack.", "mod": {"stats": {"hp": 1, "atk": 1}}})
 	return out

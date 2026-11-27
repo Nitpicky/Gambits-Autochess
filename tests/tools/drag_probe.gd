@@ -63,7 +63,7 @@ func _init() -> void:
 	await _drag(_bench_frame(0).get_global_rect().get_center(), main.shop_box.get_child(0).get_global_rect().get_center())
 	_check("unit dragged onto the shop is sold", main.me.roster.size() == n - 1)
 	# rule rows on the unit card: drag the last rule onto the first
-	var k := Shop.new_unit(main.me, &"grand_templar", 0)
+	var k := Shop.new_unit(main.me, &"lightchaser", 0)
 	main.refresh()
 	await _frames(3)
 	main._select_unit(k.uid)

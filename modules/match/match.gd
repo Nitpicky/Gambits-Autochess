@@ -186,8 +186,8 @@ func resolve_pick(p: PlayerState, option_idx: int) -> String:
 				# edited rules keep working; an upgrade's new actions get a rule at the end
 				var mine: Array = u.get("rules", [])
 				if not mine.is_empty():
-					for a in o.card.get("add", []):
-						mine.append(Kits.rule_for(a))
+					for a in o.card.get("mod", {}).get("acts", []):
+						mine.insert(maxi(0, mine.size() - 1), Kits.rule_for(a))
 		"gold":
 			p.add_gold(o.amount)
 		"xp":
@@ -266,12 +266,7 @@ func can_equip(p: PlayerState, bench_idx: int, uid: int) -> String:
 	if u.is_empty() or bench_idx < 0 or bench_idx >= p.item_bench.size():
 		return "Invalid"
 	var item := ItemCatalog.get_def(p.item_bench[bench_idx])
-	var is_slot_item: bool = item.effect.get("type", &"") == &"extra_slot"
-	var used := 0
-	for i in u.items:
-		if ItemCatalog.get_def(i).effect.get("type", &"") != &"extra_slot":
-			used += 1
-	if not is_slot_item and used >= PlayerState.item_capacity(u):
+	if u.items.size() >= PlayerState.item_capacity(u):
 		return "No free item slot"
 	if not ItemCatalog.meets_req(item, UnitCatalog.get_def(u.def), PlayerState.unit_keywords(u)):
 		return "Requires " + ItemCatalog.req_text(item)
@@ -419,6 +414,9 @@ func _fight(a: PlayerState, b: PlayerState, fixed_b: Dictionary) -> Dictionary:
 	var fight := {"a": a.id, "b": b.id if b else -1, "b_name": spec_b.name, "winner": res.winner,
 		"survivors": res.survivors, "turns": res.turns, "log": res.log, "damage": 0,
 		"bounty": [Economy.pay_bounty(a, res.kills[0], res.standing[0]), Economy.pay_bounty(b, res.kills[1], res.standing[1]) if b else 0]}
+	_battle_rewards(a, res, 0)
+	if b:
+		_battle_rewards(b, res, 1)
 	var pve := round_type == &"pve"
 	a.history.append({"round": round_no, "result": "W" if res.winner == 0 else ("L" if res.winner == 1 else "D")})
 	if b:
@@ -444,6 +442,24 @@ func _fight(a: PlayerState, b: PlayerState, fixed_b: Dictionary) -> Dictionary:
 			if b:
 				b.lose_hp(GameConfig.DRAW_DAMAGE)
 	return fight
+
+
+## Gold earned in the fight (Bounty, Raid, gold steps) and permanent stacks go back to the player's units.
+func _battle_rewards(p: PlayerState, res: Dictionary, side: int) -> void:
+	var g: int = res.get("gold", [0, 0])[side]
+	if g > 0:
+		p.add_gold(g)
+	elif g < 0:
+		p.add_gold(-mini(-g, p.gold()))
+	var perm: Dictionary = res.get("perm", [{}, {}])[side]
+	for uid in perm:
+		var u := p.find_unit(uid)
+		if u.is_empty():
+			continue
+		var mine: Dictionary = u.get("perm", {})
+		for k in perm[uid]:
+			mine[k] = int(mine.get(k, 0)) + int(perm[uid][k])
+		u["perm"] = mine
 
 
 static func _loss_damage(survivors: int, winner_rank: int) -> int:

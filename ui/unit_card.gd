@@ -17,8 +17,7 @@ const C_HP := Color("e0566b")
 const C_SPD := Color("4fc3d9")
 const C_AP := Color("f2c34a")
 const C_PP := Color("5aa9e6")
-const ARCH_COLORS := {&"fortress": Color("c8c8d8"), &"control": Color("7fc8f0"), &"tempo": Color("e0605a"),
-	&"ramp": Color("7ccf6a"), &"attrition": Color("a070d8"), &"swarm": Color("d89a50")}
+const ARCH_COLORS := Keywords.FACTION_COLORS
 
 var def: Dictionary = {}
 var inst: Dictionary = {}
@@ -46,10 +45,17 @@ static func stats(d: Dictionary, u: Dictionary) -> Dictionary:
 		for k in it.stats:
 			if s.has(k):
 				s[k] += it.stats[k]
+	var unit := {"hp": GameConfig.HP_UNIT, "atk": GameConfig.ATK_UNIT, "spd": 1.0, "ap": 1.0, "pp": 1.0}
+	var key := {"hp": "hp", "atk": "atk", "spd": "ini", "ap": "ap", "pp": "pp"}
+	var mods: Array = [d.get("kit", {}).get("relic_mod", {})]
 	for c in u.get("cards", []):
-		for k in ["hp", "atk", "ap", "pp", "ini"]:
-			if c.has(k):
-				s[k] += c[k]
+		mods.append(c.get("mod", {}))
+	for m in mods:
+		var ms: Dictionary = m.get("stats", {})
+		for k in ms:
+			if key.has(k):
+				s[key[k]] += float(ms[k]) * unit[k]
+	s.atk += float(u.get("perm", {}).get("atk", 0)) * GameConfig.ATK_UNIT
 	return s
 
 

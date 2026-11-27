@@ -1,43 +1,45 @@
 class_name Keywords
 extends RefCounted
-## Keyword vocabulary, faction ring and archetypes. Pure data.
+## Keyword registry (from the roster / the doc's "Keyword registry"), factions and archetypes. Pure data.
+## Faction is the only tag; the shop bias "archetypes" are the six faction spectrums.
 
 const FACTIONS: Array[StringName] = [&"lyonar", &"vanar", &"songhai", &"magmar", &"abyssian", &"vetruvian"]
 const FACTION_NAMES := {
 	&"lyonar": "Lyonar", &"vanar": "Vanar", &"songhai": "Songhai",
-	&"magmar": "Magmar", &"abyssian": "Abyssian", &"vetruvian": "Vetruvian", &"neutral": "Neutral",
+	&"magmar": "Magmar", &"abyssian": "Abyssian", &"vetruvian": "Vetruvian", &"neutral": "Neutral", &"common": "Common",
 }
 const FACTION_COLORS := {
 	&"lyonar": Color("e8c35a"), &"vanar": Color("7fc8f0"), &"songhai": Color("e0605a"),
 	&"magmar": Color("7ccf6a"), &"abyssian": Color("a070d8"), &"vetruvian": Color("d89a50"), &"neutral": Color("aaaaaa"),
-}
-
-const KEYWORDS := {
-	&"guard": {"name": "Guard", "faction": &"lyonar", "text": "PP reaction: takes a hit aimed at an ally in its row."},
-	&"rally": {"name": "Rally", "faction": &"lyonar", "text": "Each time it spends PP, allies in its row get +10% Attack for the battle (stacks)."},
-	&"ward": {"name": "Ward", "faction": &"vanar", "text": "Starts battle with a Ward that blocks the next damage instance."},
-	&"chill": {"name": "Chill", "faction": &"vanar", "text": "Hits apply Chill (-10% Initiative per stack). At 3 stacks the target is Frozen and loses its next action."},
-	&"swift": {"name": "Swift", "faction": &"songhai", "text": "+25% damage against a target that has not acted yet this turn."},
-	&"mark": {"name": "Mark", "faction": &"songhai", "text": "Hits apply Mark: Marked units take +20% damage from everyone."},
-	&"grow": {"name": "Grow", "faction": &"magmar", "text": "+8% Attack and max HP at each of its turn starts."},
-	&"feast": {"name": "Feast", "faction": &"magmar", "text": "On a kill, heals 20% and refunds 1 AP."},
-	&"sacrifice": {"name": "Sacrifice", "faction": &"abyssian", "text": "AP: consumes an allied token (or 25% own HP) to deal 200% Attack."},
-	&"deathwatch": {"name": "Deathwatch", "faction": &"abyssian", "text": "PP reaction whenever any unit dies: strike a random enemy for 60% Attack."},
-	&"construct": {"name": "Construct", "faction": &"vetruvian", "text": "Summons a token unit into an empty cell at battle start."},
-	&"fortify": {"name": "Fortify", "faction": &"vetruvian", "text": "+10% damage reduction for each of its turns ended in place (max 40%)."},
+	&"common": Color("c8c8d8"),
 }
 
 ## Ring order; neighbours are adjacent entries (wrapping).
 const RING: Array[StringName] = [&"lyonar", &"vanar", &"songhai", &"magmar", &"abyssian", &"vetruvian"]
 
+## Archetype = a faction spectrum (used by the shop bias and the card's right edge).
 const ARCHETYPES := {
-	&"fortress": {"name": "Fortress", "keywords": [&"guard", &"ward"]},
-	&"control": {"name": "Control", "keywords": [&"chill", &"mark"]},
-	&"tempo": {"name": "Tempo", "keywords": [&"swift", &"feast"]},
-	&"ramp": {"name": "Ramp", "keywords": [&"grow", &"sacrifice"]},
-	&"attrition": {"name": "Attrition", "keywords": [&"deathwatch", &"fortify"]},
-	&"swarm": {"name": "Swarm", "keywords": [&"construct", &"rally"]},
+	&"lyonar": {"name": "Lyonar: Cleric to Knight", "faction": &"lyonar"},
+	&"songhai": {"name": "Songhai: Monk to Ninja", "faction": &"songhai"},
+	&"vetruvian": {"name": "Vetruvian: Sun Priest to Dervish", "faction": &"vetruvian"},
+	&"abyssian": {"name": "Abyssian: Cultist to Abomination", "faction": &"abyssian"},
+	&"magmar": {"name": "Magmar: Tamer to Colossus", "faction": &"magmar"},
+	&"vanar": {"name": "Vanar: Spirit to Viking", "faction": &"vanar"},
 }
+
+static var KEYWORDS: Dictionary = {}
+
+
+static func _ensure() -> void:
+	if not KEYWORDS.is_empty():
+		return
+	for k in Roster.keywords():
+		KEYWORDS[StringName(k.id)] = {"name": k.name, "faction": StringName(k.owner), "text": k.text}
+
+
+static func get_kw(k: StringName) -> Dictionary:
+	_ensure()
+	return KEYWORDS.get(k, {})
 
 
 static func neighbours(faction: StringName) -> Array[StringName]:
@@ -48,6 +50,7 @@ static func neighbours(faction: StringName) -> Array[StringName]:
 
 
 static func faction_keywords(faction: StringName) -> Array[StringName]:
+	_ensure()
 	var out: Array[StringName] = []
 	for k in KEYWORDS:
 		if KEYWORDS[k].faction == faction:
@@ -55,14 +58,22 @@ static func faction_keywords(faction: StringName) -> Array[StringName]:
 	return out
 
 
+## Archetypes a keyword list leans into: the factions owning those keywords.
 static func archetypes_of_keywords(kws: Array) -> Array[StringName]:
+	_ensure()
 	var out: Array[StringName] = []
-	for a in ARCHETYPES:
-		for k in ARCHETYPES[a].keywords:
-			if k in kws and not (a in out):
-				out.append(a)
+	for k in kws:
+		var f: StringName = KEYWORDS.get(StringName(k), {}).get("faction", &"common")
+		if ARCHETYPES.has(f) and not (f in out):
+			out.append(f)
 	return out
 
 
 static func kw_name(k: StringName) -> String:
+	_ensure()
 	return KEYWORDS[k].name if KEYWORDS.has(k) else String(k).capitalize()
+
+
+static func kw_text(k: StringName) -> String:
+	_ensure()
+	return KEYWORDS[k].text if KEYWORDS.has(k) else ""

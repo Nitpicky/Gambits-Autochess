@@ -1,0 +1,654 @@
+{
+"abyssal-crawler": {
+"name": "Abyssal Crawler",
+"sprite": "f4_crawler"
+},
+"abyssal-juggernaut": {
+"name": "Abyssal Juggernaut",
+"sprite": "f4_juggernaut"
+},
+"allomancer": {
+"name": "Allomancer",
+"sprite": "f3_allomancer"
+},
+"argeon-highmayne": {
+"name": "Argeon Highmayne",
+"sprite": "f1_general"
+},
+"aymara-healer": {
+"name": "Aymara Healer",
+"sprite": "f3_aymarahealer"
+},
+"beastclad-hunter": {
+"name": "Beastclad Hunter",
+"sprite": "f5_orphanoftheaspect"
+},
+"black-solus": {
+"name": "Black Solus",
+"sprite": "f4_blacksolus"
+},
+"blood-baronette": {
+"name": "Blood Baronette",
+"sprite": "f4_bloodbaronette"
+},
+"blood-siren": {
+"name": "Blood Siren",
+"sprite": "f4_siren"
+},
+"bloodtide-priestess": {
+"name": "Bloodtide Priestess",
+"sprite": "f4_bloodmoon"
+},
+"calligrapher": {
+"name": "Calligrapher",
+"sprite": "f2_caligrapher"
+},
+"carrion-collector": {
+"name": "Carrion Collector",
+"sprite": "f4_plaguedr"
+},
+"cassyva-soulreaper": {
+"name": "Cassyva Soulreaper",
+"sprite": "f4_altgeneral"
+},
+"celestial-phantom": {
+"name": "Celestial Phantom",
+"sprite": "f2_deathphantom"
+},
+"chakri-avatar": {
+"name": "Chakri Avatar",
+"sprite": "f2_chakriavatar"
+},
+"ciphyron-ascendant": {
+"name": "Ciphyron Ascendant",
+"sprite": "f3_3rdgeneral"
+},
+"cloudcaller": {
+"name": "Cloudcaller",
+"sprite": "f6_ynuyttracker"
+},
+"coalfist": {
+"name": "Coalfist",
+"sprite": "f2_eclipseasura"
+},
+"cryoblade": {
+"name": "Cryoblade",
+"sprite": "f6_sinergyunit"
+},
+"crystal-arbiter": {
+"name": "Crystal Arbiter",
+"sprite": "f6_auroraguardian"
+},
+"darkspine-elemental": {
+"name": "Darkspine Elemental",
+"sprite": "f4_darkspine"
+},
+"death-knell": {
+"name": "Death Knell",
+"sprite": "f4_deathknell"
+},
+"decorated-enlistee": {
+"name": "Decorated Enlistee",
+"sprite": "f1_kingsguard"
+},
+"deepfire-devourer": {
+"name": "Deepfire Devourer",
+"sprite": "f4_daemondeep"
+},
+"desolator": {
+"name": "Desolator",
+"sprite": "f4_desolater"
+},
+"disciple-of-yggdra": {
+"name": "Disciple of Yggdra",
+"sprite": "f6_ynuytwarlock"
+},
+"draugar-lord": {
+"name": "Draugar Lord",
+"sprite": "f6_draugarlord"
+},
+"dreamshaper": {
+"name": "Dreamshaper",
+"sprite": "f3_dreamshaper"
+},
+"dunecaster": {
+"name": "Dunecaster",
+"sprite": "f3_orbweaver"
+},
+"dustdrinker": {
+"name": "Dustdrinker",
+"sprite": "f3_curseddervish"
+},
+"earth-walker": {
+"name": "Earth Walker",
+"sprite": "f5_earthwalker"
+},
+"erratic-raptyr": {
+"name": "Erratic Raptyr",
+"sprite": "f5_unstableflump"
+},
+"faie-bloodwing": {
+"name": "Faie Bloodwing",
+"sprite": "f6_general"
+},
+"falcius": {
+"name": "Falcius",
+"sprite": "f3_falcius"
+},
+"fate-watcher": {
+"name": "Fate Watcher",
+"sprite": "f3_insightcaster"
+},
+"fenrir-berserker": {
+"name": "Fenrir Berserker",
+"sprite": "f6_fenrirwerewolf"
+},
+"fenrir-warmaster": {
+"name": "Fenrir Warmaster",
+"sprite": "f6_fenrirwarmaster"
+},
+"form-ages": {
+"name": "Shaper's final form",
+"sprite": "f5_megabrontodon"
+},
+"form-bear": {
+"name": "Bear form",
+"sprite": "f5_ankylos"
+},
+"form-colossus": {
+"name": "Colossus form",
+"sprite": "f5_juggernaut"
+},
+"form-feral": {
+"name": "Feral form",
+"sprite": "f5_support"
+},
+"form-great-spirit-bear": {
+"name": "Yggdra's Voracity",
+"sprite": "f6_ynuytunleashed"
+},
+"form-magma": {
+"name": "Magma form",
+"sprite": "f5_magma"
+},
+"form-panther": {
+"name": "Panther form",
+"sprite": "f5_pteryx"
+},
+"form-spirit-bear": {
+"name": "Spirit Bear",
+"sprite": "f6_waterbear"
+},
+"form-wolf": {
+"name": "Wolf form",
+"sprite": "f5_rex"
+},
+"form-wyrm": {
+"name": "Wyrm form",
+"sprite": "f5_drogon"
+},
+"freeblade": {
+"name": "Freeblade",
+"sprite": "f6_freeblade"
+},
+"ghost-wolf": {
+"name": "Ghost Wolf",
+"sprite": "f6_spiritwolf"
+},
+"gigaloth": {
+"name": "Gigaloth",
+"sprite": "f5_upgradizon"
+},
+"glacial-elemental": {
+"name": "Glacial Elemental",
+"sprite": "f6_snowman"
+},
+"gor": {
+"name": "Gor",
+"sprite": "f4_gor"
+},
+"gore-horn": {
+"name": "Gore Horn",
+"sprite": "f2_tank"
+},
+"grand-strategos": {
+"name": "Grand Strategos",
+"sprite": "f1_rightfulheir"
+},
+"grandmaster-kraigon": {
+"name": "Grandmaster Kraigon",
+"sprite": "f5_grandmasterkraigon"
+},
+"grandmaster-nosh-rak": {
+"name": "Grandmaster Nosh-Rak",
+"sprite": "f3_grandmasternoshrak"
+},
+"grandmaster-variax": {
+"name": "Grandmaster Variax",
+"sprite": "f4_grandmastervariax"
+},
+"grandmaster-zendo": {
+"name": "Grandmaster Zendo",
+"sprite": "f2_grandmasterzendo"
+},
+"grandmaster-zir": {
+"name": "Grandmaster Z'ir",
+"sprite": "f1_grandmasterzir"
+},
+"grimrock": {
+"name": "Grimrock",
+"sprite": "f5_grimrock"
+},
+"gust": {
+"name": "Gust",
+"sprite": "f3_eurus"
+},
+"hearth-sister": {
+"name": "Hearth-Sister",
+"sprite": "f6_justice"
+},
+"hideatsu-the-ebon-ox": {
+"name": "Hideatsu the Ebon Ox",
+"sprite": "f2_heartofthesonghai"
+},
+"horror": {
+"name": "Horror",
+"sprite": "f4_horror"
+},
+"hundred-handed-rakushi": {
+"name": "Hundred-Handed Rakushi",
+"sprite": "f2_sekitori"
+},
+"indominus": {
+"name": "Indominus",
+"sprite": "f1_invincibuddy"
+},
+"ironcliffe-guardian": {
+"name": "Ironcliffe Guardian",
+"sprite": "f1_ironcliffeguardian"
+},
+"jade-monk": {
+"name": "Jade Monk",
+"sprite": "f2_ogremonk02"
+},
+"kaido-assassin": {
+"name": "Kaido Assassin",
+"sprite": "f2_melee"
+},
+"kara-winterblade": {
+"name": "Kara Winterblade",
+"sprite": "f6_altgeneral"
+},
+"keeper-of-ages": {
+"name": "Keeper of Ages",
+"sprite": "f3_keeperofages"
+},
+"khanuum-ka": {
+"name": "Khanuum-ka",
+"sprite": "f3_rehorah"
+},
+"ki-beholder": {
+"name": "Ki Beholder",
+"sprite": "f2_kibeholder"
+},
+"kindred-hunter": {
+"name": "Kindred Hunter",
+"sprite": "f6_kindredhunter"
+},
+"klaxon": {
+"name": "Klaxon",
+"sprite": "f4_klaxon"
+},
+"kolossus": {
+"name": "Kolossus",
+"sprite": "f5_kolossus"
+},
+"krater": {
+"name": "Krater",
+"sprite": "f5_oxalaia"
+},
+"kujata": {
+"name": "Kujata",
+"sprite": "f5_kujata"
+},
+"lantern-fox": {
+"name": "Lantern Fox",
+"sprite": "f2_lanternfox"
+},
+"lavaslasher": {
+"name": "Lavaslasher",
+"sprite": "f5_lavalasher"
+},
+"lightchaser": {
+"name": "Lightchaser",
+"sprite": "f1_caster"
+},
+"lilithe-blightchaser": {
+"name": "Lilithe Blightchaser",
+"sprite": "f4_general"
+},
+"makantor-warbeast": {
+"name": "Makantor Warbeast",
+"sprite": "f5_mankatorwarbeast"
+},
+"malicious-wisp": {
+"name": "Malicious Wisp",
+"sprite": "f6_evilcrystalwisp"
+},
+"massacre-artist": {
+"name": "Massacre Artist",
+"sprite": "f2_supekuta"
+},
+"matron-elveiti": {
+"name": "Matron Elveiti",
+"sprite": "f6_perfectreflection"
+},
+"mirage-master": {
+"name": "Mirage Master",
+"sprite": "f3_glassmirage"
+},
+"moloki-huntress": {
+"name": "Moloki Huntress",
+"sprite": "f5_molokihuntress"
+},
+"night-howler": {
+"name": "Night Howler",
+"sprite": "f6_shadowvespyr"
+},
+"nightshroud": {
+"name": "Nightshroud",
+"sprite": "f4_creepmangler"
+},
+"nimbus": {
+"name": "Nimbus",
+"sprite": "f3_nimbus"
+},
+"nocturne": {
+"name": "Nocturne",
+"sprite": "f4_nocturn"
+},
+"orizuru": {
+"name": "Orizuru",
+"sprite": "f2_orizuru"
+},
+"oserix": {
+"name": "Oserix",
+"sprite": "f3_anubis"
+},
+"pantheran": {
+"name": "Pantheran",
+"sprite": "f3_onyxpantheran"
+},
+"peacekeeper": {
+"name": "Peacekeeper",
+"sprite": "f1_peacekeeper"
+},
+"portal-guardian": {
+"name": "Portal Guardian",
+"sprite": "f3_zodiac02"
+},
+"progenitor": {
+"name": "Progenitor",
+"sprite": "f5_sinergyunit"
+},
+"pyromancer": {
+"name": "Pyromancer",
+"sprite": "f3_pyromancer"
+},
+"ragebinder": {
+"name": "Ragebinder",
+"sprite": "f5_ragebinder"
+},
+"ragnora-the-relentless": {
+"name": "Ragnora the Relentless",
+"sprite": "f5_3rdgeneral"
+},
+"rancour": {
+"name": "Rancour",
+"sprite": "f5_rancour"
+},
+"reaper-of-the-nine-moons": {
+"name": "Reaper of the Nine Moons",
+"sprite": "f4_reaperninemoons"
+},
+"reva-eventide": {
+"name": "Reva Eventide",
+"sprite": "f2_altgeneral"
+},
+"rizen": {
+"name": "Rizen",
+"sprite": "f5_genesis"
+},
+"sand-howler": {
+"name": "Sand Howler",
+"sprite": "f3_sandhowler"
+},
+"sandswirl-reader": {
+"name": "Sandswirl Reader",
+"sprite": "f3_bobble"
+},
+"scintilla": {
+"name": "Scintilla",
+"sprite": "f1_scintilla"
+},
+"scioness-sajj": {
+"name": "Scioness Sajj",
+"sprite": "f3_altgeneral"
+},
+"scroll-bandit": {
+"name": "Scroll Bandit",
+"sprite": "f2_spellthief"
+},
+"seismic-elemental": {
+"name": "Seismic Elemental",
+"sprite": "f6_seismicelemental"
+},
+"shadowdancer": {
+"name": "Shadowdancer",
+"sprite": "f4_shadowdancer"
+},
+"shidai-stormblossom": {
+"name": "Shidai Stormblossom",
+"sprite": "f2_3rdgeneral"
+},
+"silithar-elder": {
+"name": "Silithar Elder",
+"sprite": "f5_silitharelder"
+},
+"silverguard-knight": {
+"name": "Silverguard Knight",
+"sprite": "f1_tank"
+},
+"silverguard-squire": {
+"name": "Silverguard Squire",
+"sprite": "f1_silverguardsquire"
+},
+"skullprophet": {
+"name": "Skullprophet",
+"sprite": "f4_skullcaster"
+},
+"snow-chaser": {
+"name": "Snow Chaser",
+"sprite": "f6_snowchaser"
+},
+"sol-pontiff": {
+"name": "Sol Pontiff",
+"sprite": "f1_solpontiff"
+},
+"solarius": {
+"name": "Solarius",
+"sprite": "f1_solarius"
+},
+"sparrowhawk": {
+"name": "Sparrowhawk",
+"sprite": "f2_sparrowhawk"
+},
+"starfire-scarab": {
+"name": "Starfire Scarab",
+"sprite": "f3_starfirescarab"
+},
+"starhorn-the-seeker": {
+"name": "Starhorn the Seeker",
+"sprite": "f5_altgeneral"
+},
+"storm-kage": {
+"name": "Storm Kage",
+"sprite": "f2_stormkage"
+},
+"sun-sister-sterope": {
+"name": "Sun Sister Sterope",
+"sprite": "f1_sister"
+},
+"sun-wisp": {
+"name": "Sun Wisp",
+"sprite": "f1_sunwisp"
+},
+"sunbreaker": {
+"name": "Sunbreaker",
+"sprite": "f1_sunbreaker"
+},
+"sunforge-lancer": {
+"name": "Sunforge Lancer",
+"sprite": "f1_sunforgelancer"
+},
+"sunrise-cleric": {
+"name": "Sunrise Cleric",
+"sprite": "f1_archdeacon"
+},
+"sunstone-templar": {
+"name": "Sunstone Templar",
+"sprite": "f1_sunstonetemplar"
+},
+"suntide-maiden": {
+"name": "Suntide Maiden",
+"sprite": "f1_support"
+},
+"suzumebachi": {
+"name": "Suzumebachi",
+"sprite": "f2_onnabugeisha"
+},
+"terradon": {
+"name": "Terradon",
+"sprite": "f5_flumposaur"
+},
+"thicket-augur": {
+"name": "Thicket Augur",
+"sprite": "f6_tundraguardian"
+},
+"tok-abomination": {
+"name": "Abomination",
+"sprite": "f4_abomination"
+},
+"tok-egg": {
+"name": "Egg",
+"sprite": "f5_egg"
+},
+"tok-frost-wolf": {
+"name": "Frost Wolf",
+"sprite": "f6_snowchasermk2"
+},
+"tok-mirror": {
+"name": "Mirror image",
+"sprite": "f2_twilightfox"
+},
+"tok-obelysk": {
+"name": "Obelysk",
+"sprite": "f3_obelyskredsand"
+},
+"tok-raptor": {
+"name": "Raptor",
+"sprite": "f5_gibblegup"
+},
+"tok-sand-wisp": {
+"name": "Sand Wisp",
+"sprite": "f3_dervish"
+},
+"tok-scarab": {
+"name": "Scarab",
+"sprite": "f3_miniscarab"
+},
+"tok-shade": {
+"name": "Shade",
+"sprite": "f4_phantasm"
+},
+"twilight-fox": {
+"name": "Twilight Fox",
+"sprite": "f2_twilightfox"
+},
+"underlord-xorxuul": {
+"name": "Underlord Xor'Xuul",
+"sprite": "f4_demonofeternity"
+},
+"unstable-leviathan": {
+"name": "Unstable Leviathan",
+"sprite": "f5_unstableleviathan"
+},
+"ursaplomb": {
+"name": "Ursaplomb",
+"sprite": "f6_doofybear"
+},
+"vigilator": {
+"name": "Vigilator",
+"sprite": "f1_buildcommon"
+},
+"voice-of-the-wind": {
+"name": "Voice of the Wind",
+"sprite": "f6_voiceofthewind"
+},
+"vorpal-reaver": {
+"name": "Vorpal Reaver",
+"sprite": "f4_daemongate"
+},
+"warpup": {
+"name": "Warpup",
+"sprite": "f5_minibeast"
+},
+"widowmaker": {
+"name": "Widowmaker",
+"sprite": "f2_ranged"
+},
+"wild-inceptor": {
+"name": "Wild Inceptor",
+"sprite": "f5_wildinceptor"
+},
+"wildfire-tenketsu": {
+"name": "Wildfire Tenketsu",
+"sprite": "f2_godpalmblacktiger"
+},
+"windcliffe-alarmist": {
+"name": "Windcliffe Alarmist",
+"sprite": "f1_baastchampion"
+},
+"windcliffe-protector": {
+"name": "Windcliffe Protector",
+"sprite": "f1_friendsguard"
+},
+"winter-maerid": {
+"name": "Winter Maerid",
+"sprite": "f6_waterelemental"
+},
+"wolfraven": {
+"name": "Wolfraven",
+"sprite": "f6_wolfraven"
+},
+"xenkai-cannoneer": {
+"name": "Xenkai Cannoneer",
+"sprite": "f2_flareslinger"
+},
+"young-silithar": {
+"name": "Young Silithar",
+"sprite": "f5_silitharyoung"
+},
+"zephyr": {
+"name": "Zephyr",
+"sprite": "f3_zephyr"
+},
+"ziran-sunforge": {
+"name": "Zir'An Sunforge",
+"sprite": "f1_altgeneral"
+},
+"zirix-starstrider": {
+"name": "Zirix Starstrider",
+"sprite": "f3_general"
+}
+}

@@ -47,20 +47,35 @@ func _test_attributes() -> void:
 	for id in ItemCatalog.all():
 		steps_ok = steps_ok and int(ItemCatalog.get_def(id).stats.get("hp", 0)) % GameConfig.HP_STEP == 0
 	check(steps_ok, "every unit and item HP is a multiple of %d" % GameConfig.HP_STEP)
-	h.add(Effects.status(&"chill", 1))
-	h.add(Effects.status(&"chill", 2))
-	check(h.stacks(&"chill") == 3 and h.attributes.size() == 2, "second Chill merges into the first")
 	h.dispose()
+	var u := BattleUnit.new()
+	u.set_status(&"chill", 1)
+	u.set_status(&"chill", 2)
+	check(u.st(&"chill") == 3 and u.attributes.size() == 1, "second Chill merges into the first")
+	u.add_kw("tough", 1)
+	u.add_kw("tough", 2, 1)
+	check(u.kw("tough") == 3.0, "keywords merge (Tough 1 + Tough 2 for a turn = Tough 3)")
+	u.tick()
+	check(u.kw("tough") == 1.0, "the temporary Tough wears off at its turn end")
+	u.dispose()
+	check(Roster.units().size() == 144, "roster has the 144 doc units (%d)" % Roster.units().size())
+	var spr_ok := true
+	for id in UnitCatalog.all():
+		var spr: String = UnitCatalog.get_def(id).sprite
+		if not ResourceLoader.exists("res://art/duelyst/units/%s.tres" % spr):
+			spr_ok = false
+			print("     missing sprite: ", id, " ", spr)
+	check(spr_ok, "every unit, token and monster sprite exists")
 
 
 func _test_battle() -> void:
 	var a := {"name": "A", "relics": [&"war_banner", &"sunforge_crest"], "units": [
-		{"def": &"squire", "row": 0, "col": 0}, {"def": &"grand_templar", "row": 0, "col": 1, "items": [&"tower_shield", &"iron_band", &"phoenix_feather"]},
-		{"def": &"acolyte", "row": 1, "col": 0, "items": [&"healing_charm"]}, {"def": &"sunforger", "row": 1, "col": 1}, {"def": &"winter_queen", "row": 1, "col": 2, "items": [&"glacier_heart"]}]}
+		{"def": &"decorated-enlistee", "row": 0, "col": 0}, {"def": &"ironcliffe-guardian", "row": 0, "col": 1, "items": [&"tower_shield", &"iron_band", &"phoenix_feather"]},
+		{"def": &"lightchaser", "row": 1, "col": 0, "items": [&"healing_charm"]}, {"def": &"argeon-highmayne", "row": 1, "col": 1}, {"def": &"crystal-arbiter", "row": 1, "col": 2, "items": [&"glacier_heart"]}]}
 	var b := {"name": "B", "relics": [&"abyssal_altar", &"hourglass"], "units": [
-		{"def": &"bone_wraith", "row": 0, "col": 0, "items": [&"bone_charm"]}, {"def": &"lord_of_ruin", "row": 0, "col": 1, "items": [&"vampiric_fang", &"berserker_mask"]},
-		{"def": &"night_fiend", "row": 0, "col": 2, "items": [&"mirror_blade", &"riposte_blade"]}, {"def": &"shadow_spawner", "row": 1, "col": 0, "items": [&"ritual_dagger"]},
-		{"def": &"void_priestess", "row": 1, "col": 1, "level": 2, "cards": [{"hp": 50, "atk": 3, "pp": 1}]}]}
+		{"def": &"abyssal-crawler", "row": 0, "col": 0, "items": [&"bone_charm"]}, {"def": &"abyssal-juggernaut", "row": 0, "col": 1, "items": [&"vampiric_fang", &"berserker_mask"]},
+		{"def": &"blood-siren", "row": 0, "col": 2, "items": [&"riposte_blade"]}, {"def": &"bloodtide-priestess", "row": 1, "col": 0, "items": [&"ritual_dagger"]},
+		{"def": &"cassyva-soulreaper", "row": 1, "col": 1, "level": 2, "cards": Kits.upgrades(&"cassyva-soulreaper").slice(0, 1)}]}
 	var r := BattleSim.new().run(a, b, 42)
 	check(r.winner in [-1, 0, 1], "battle resolves (winner %d in %d turns)" % [r.winner, r.turns])
 	check(r.log.size() > 10 and r.log[r.log.size() - 1].t == "end", "battle log ends with an end event")

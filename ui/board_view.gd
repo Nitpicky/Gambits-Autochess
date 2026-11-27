@@ -392,6 +392,9 @@ func _apply(ev: Dictionary) -> float:
 			_say("%s [color=#8a8da0]falls[/color]" % _nm(ev.u))
 			return _dur(ev)
 		"summon":
+			if nodes.has(ev.unit.uid):  # revived / reborn: drop the old body
+				nodes[ev.unit.uid].root.queue_free()
+				nodes.erase(ev.unit.uid)
 			_spawn(ev.unit.uid, _info(ev.unit), true)
 			_names[ev.unit.uid] = [ev.unit.name, _side(ev.unit.side)]
 			_say("%s [color=#f2c34a]appears[/color]" % _nm(ev.unit.uid))
@@ -408,6 +411,13 @@ func _apply(ev: Dictionary) -> float:
 				else:
 					var tw := create_tween()
 					tw.tween_property(n.root, "position", foot - Vector2(95, 150) * s, 0.25 / speed)
+			return _dur(ev)
+		"transform":
+			_bar(ev)
+			if nodes.has(ev.u) and ev.get("sprite", "") != "":
+				nodes[ev.u].sprite.show_unit(ev.sprite, nodes[ev.u].side == 1, 2.6)
+			_float(ev.u, ev.get("name", "Form"), Color("f2c34a"))
+			_say("%s [color=#f2c34a]becomes %s[/color]" % [_nm(ev.u), ev.get("name", "a new form")])
 			return _dur(ev)
 		"cycle":
 			_say("[color=#8a8da0]Everyone recovers AP and PP[/color]", true)

@@ -17,3 +17,4 @@ The orchestrator and the only API the UI uses.
 - 2026-11-24: Gold-style pick replaces the starter; unit choices on CHOICE_ROUNDS (rare/epic/champion+relic/legendary) replace PvE rewards and the champion round; pairs and monsters decided at round start (opponent preview); per-round history; set_rules.
 - 2026-11-24: PvE teams read their size/scale from GameConfig (1/1/2 weak monsters early, 3+ later).
 - 2026-11-24: rules_of() uses kit default rules (with upgrade-added actions); picking an upgrade that adds an action appends its rule to edited rules.
+- 2026-11-27: Fight gold (Bounty/Raid/gold steps) paid to players and permanent stacks written back to roster units (`unit.perm`); rank-up cards add their actions' rules; no extra-slot item.

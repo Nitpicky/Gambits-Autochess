@@ -43,14 +43,22 @@ static func faction(f: StringName, s: float) -> Glyph:
 	return g
 
 
+const DRAWN_KEYWORDS := [&"guard", &"chill", &"swift", &"grow", &"sacrifice", &"deathwatch"]
+
+
 ## A keyword icon on a dark disc (faction-coloured), hover shows its name and rule.
 static func keyword(k: StringName, s: float) -> Glyph:
-	var kd: Dictionary = Keywords.KEYWORDS.get(k, {})
+	var kd: Dictionary = Keywords.get_kw(k)
 	var col: Color = Keywords.FACTION_COLORS.get(kd.get("faction", &"neutral"), Color.GRAY)
 	var g := make(&"disc", Color("2b2f45"), Vector2(s, s))
-	var e := make(StringName("k_" + String(k)), col, Vector2(s, s) * 0.66)
-	e.position = Vector2(s, s) * 0.17
-	g.add_child(e)
+	if StringName(k) in DRAWN_KEYWORDS:
+		var e := make(StringName("k_" + String(k)), col, Vector2(s, s) * 0.66)
+		e.position = Vector2(s, s) * 0.17
+		g.add_child(e)
+	else:  # PROTOTYPE: no icon yet, the keyword's first two letters
+		g.text = String(kd.get("name", String(k))).substr(0, 2)
+		g.text_color = col
+		g.font_size = int(s * 0.42)
 	g.mouse_filter = Control.MOUSE_FILTER_STOP
 	g.tooltip_text = "%s\n%s" % [kd.get("name", String(k)), kd.get("text", "")]
 	return g

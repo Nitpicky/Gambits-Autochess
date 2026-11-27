@@ -1,6 +1,7 @@
 class_name ItemCatalog
 extends RefCounted
-## Items: flat stats + one effect. Effects are interpreted by modules/battle/effects.gd.
+## Items: flat stats (game units) + a "mod" (same format as upgrade cards: kw, trig, acts, flags) read by
+## BattleSim._apply_mod. PROTOTYPE: the old 33 items ported onto the new keywords, not a real item design.
 ## `req`: {"factions": [...], "keywords": [...], "row": 0} -- any listed faction OR keyword passes.
 
 static var _cache: Dictionary = {}
@@ -13,63 +14,66 @@ static func all() -> Dictionary:
 
 
 static func get_def(id: StringName) -> Dictionary:
-	return all().get(id, {})
+	return all().get(StringName(id), {})
 
 
-static func _i(id: StringName, nm: String, price: int, icon: String, stats: Dictionary, kind: String, req: Dictionary, effect: Dictionary, text: String) -> void:
-	# Stats are scaled like unit stats: HP in steps of HP_STEP, Attack/Defense scaled down.
-	var s := {}
-	for k in stats:
-		match k:
-			"hp": s[k] = GameConfig.round_hp(stats[k] * GameConfig.HP_SCALE)
-			"atk": s[k] = maxf(1.0, roundf(stats[k] * GameConfig.ATK_SCALE))
-			"def": s["dr"] = maxf(0.05, roundf(stats[k] * 0.015 / 0.05) * 0.05)  # PROTOTYPE: old Defense -> % damage reduction
-			_: s[k] = stats[k]
+static func _i(id: StringName, nm: String, price: int, icon: String, stats: Dictionary, req: Dictionary, mod: Dictionary, text: String) -> void:
 	var rarity: int = {5: 0, 15: 1, 25: 2}.get(price, 0)
-	_cache[id] = {"id": id, "name": nm, "price": price, "icon": icon, "stats": s, "kind": kind, "req": req, "effect": effect, "text": text, "rarity": rarity}
+	var kws: Array = []
+	for k in mod.get("kw", {}):
+		if not Keywords.get_kw(StringName(k)).is_empty():
+			kws.append(StringName(k))
+	_cache[id] = {"id": id, "name": nm, "price": price, "icon": icon, "stats": stats, "req": req,
+		"effect": {"type": &"mod"}, "mod": mod, "keywords": kws, "text": text, "rarity": rarity, "kind": "Item"}
 
 
 static func by_rarity(r: int) -> Array:
 	return all().keys().filter(func(k): return all()[k].rarity == r)
 
 
+static func _act(id: String, nm: String, cost: int, tgt: String, fx: Array, extra: Dictionary = {}) -> Dictionary:
+	var a := {"id": id, "name": nm, "kind": "ap", "cost": cost, "tgt": tgt, "fx": fx}
+	a.merge(extra)
+	return a
+
+
 static func _build() -> void:
-	_i(&"iron_band", "Iron Band", 5, "artifact_f1_ironbanner", {"hp": 80}, "Passive", {}, {"type": &"heal_turn_start", "pct": 0.05}, "Heals 5% max HP at each of its turn starts.")
-	_i(&"whetstone", "Whetstone", 5, "artifact_f3_spinecleaver", {"atk": 6}, "Passive", {}, {"type": &"first_attack_bonus", "pct": 0.2}, "First attack each battle deals +20% damage.")
-	_i(&"stone_skin", "Stone Skin", 5, "artifact_f5_irridiumscale", {"def": 4}, "Passive", {}, {"type": &"row_resist", "pct": 0.15}, "Takes 15% less damage from row-wide attacks.")
-	_i(&"quick_boots", "Quick Boots", 5, "artifact_f2_cyclonemask", {"ini": 1}, "Passive", {}, {"type": &"tiebreak"}, "Wins every Speed tie.")
-	_i(&"hunters_eye", "Hunter's Eye", 5, "artifact_f2_maskofshadows", {"atk": 4}, "Passive", {}, {"type": &"status_on_hit", "status": &"mark", "first_only": true}, "First hit each battle applies Mark.")
-	_i(&"taunting_horn", "Taunting Horn", 5, "artifact_f1_skywindglaives", {"hp": 100}, "Behaviour", {"row": 0}, {"type": &"taunt"}, "Melee enemies must target this unit.")
-	_i(&"focus_gem", "Focus Gem", 15, "artifact_f2_unboundedenergyamulet", {"atk": 6, "ini": 1, "ap": 1}, "Resource", {}, {}, "+1 AP.")
-	_i(&"prayer_bead", "Prayer Bead", 15, "artifact_f1_dawnseye", {"hp": 80, "def": 2, "pp": 1}, "Resource", {}, {}, "+1 PP.")
-	_i(&"bandolier", "Bandolier", 15, "artifact_f3_sandscepter", {"hp": 60}, "Utility", {}, {"type": &"extra_slot"}, "+1 item slot (takes none itself).")
-	_i(&"vampiric_fang", "Vampiric Fang", 15, "artifact_f2_bloodleechmask", {"atk": 8}, "Passive", {}, {"type": &"lifesteal", "pct": 0.15}, "Heals 15% of damage dealt.")
-	_i(&"thorn_mail", "Thorn Mail", 15, "artifact_f6_frostplate", {"hp": 60, "def": 6}, "Passive", {}, {"type": &"thorns", "pct": 0.2}, "Reflects 20% of melee damage taken.")
-	_i(&"healing_charm", "Healing Charm", 15, "artifact_f3_repairstaff", {"hp": 100}, "PP action", {}, {"type": &"gambit", "gambit": {"kind": &"pp", "trigger": &"ally_damaged", "cond": &"target_below", "arg": 0.5, "action": &"heal", "power": 0.2}}, "PP: when an ally drops below 50%, heal it 20%.")
-	_i(&"riposte_blade", "Riposte Blade", 15, "artifact_f2_crescentspear", {"atk": 8}, "PP action", {}, {"type": &"gambit", "gambit": {"kind": &"pp", "trigger": &"self_hit_melee", "action": &"counter", "power": 0.7}}, "PP: counterattack when hit in melee.")
-	_i(&"bomb_satchel", "Bomb Satchel", 15, "artifact_f3_thunderclap", {"atk": 6}, "AP action", {}, {"type": &"gambit", "gambit": {"kind": &"ap", "action": &"row_strike", "power": 0.5}}, "AP: hit a whole enemy row for 50% Attack.")
-	_i(&"lion_crest", "Lion Crest", 15, "artifact_f1_bigshield", {"hp": 120, "def": 3}, "Keyword", {"row": 0}, {"type": &"keyword", "keyword": &"guard"}, "Gains Guard.")
-	_i(&"frost_shard", "Frost Shard", 15, "artifact_f6_frostbiter", {"atk": 6, "ini": 1}, "Keyword", {"factions": [&"vanar", &"songhai"]}, {"type": &"keyword", "keyword": &"chill"}, "Gains Chill.")
-	_i(&"scarab_idol", "Scarab Idol", 15, "artifact_f3_staffofykir", {"hp": 80}, "Keyword", {"factions": [&"vetruvian", &"abyssian"]}, {"type": &"keyword", "keyword": &"construct", "token": &"scarab"}, "Gains Construct (summons a Scarab).")
-	_i(&"berserker_mask", "Berserker Mask", 15, "artifact_f2_markgorehorn", {"atk": 15}, "Behaviour", {}, {"type": &"berserk"}, "Always targets the lowest-HP enemy and never uses PP support actions.")
-	_i(&"cowards_cloak", "Coward's Cloak", 15, "artifact_f4_ghostazalea", {"hp": 80, "ini": 2}, "Behaviour", {}, {"type": &"coward", "threshold": 0.4, "value": 0.15}, "Below 40% HP, moves to the back row and takes 15% less damage.")
-	_i(&"tower_shield", "Tower Shield", 15, "artifact_f1_shieldofphalanx", {"def": 6}, "Synergy", {"keywords": [&"guard"]}, {"type": &"flag", "flag": &"free_first_guard"}, "First Guard each battle costs no PP.")
-	_i(&"blood_chalice", "Blood Chalice", 15, "artifact_f4_heartborrower", {"hp": 100}, "Synergy", {"keywords": [&"sacrifice"]}, {"type": &"flag", "flag": &"sacrifice_heal", "value": 0.15}, "Sacrifice also heals this unit 15%.")
-	_i(&"sun_lantern", "Sun Lantern", 15, "artifact_f1_sunstonebracers", {"hp": 80, "def": 3}, "Synergy", {"factions": [&"lyonar"]}, {"type": &"flag", "flag": &"rally_heal", "value": 0.05}, "Each Rally also heals its row 5%.")
-	_i(&"titans_belt", "Titan's Belt", 25, "artifact_f5_adamantineclaws", {"hp": 250, "ini": -1}, "Passive", {}, {"type": &"flag", "flag": &"immune_frozen"}, "Can't be Frozen.")
-	_i(&"executioners_edge", "Executioner's Edge", 25, "artifact_f4_spectralblade", {"atk": 14}, "Passive", {}, {"type": &"execute", "pct": 0.25, "threshold": 0.3}, "+25% damage to targets below 30% HP.")
-	_i(&"phoenix_feather", "Phoenix Feather", 25, "artifact_f5_eternalheart", {"hp": 150}, "Passive", {}, {"type": &"phoenix"}, "Once per battle, survives a lethal hit at 1 HP.")
-	_i(&"ritual_dagger", "Ritual Dagger", 25, "artifact_f4_soulgrimwar", {"atk": 12}, "AP action", {"factions": [&"abyssian"], "keywords": [&"construct"]}, {"type": &"gambit", "gambit": {"kind": &"ap", "action": &"sacrifice", "cond": &"has_token", "power": 2.0}}, "AP: consume an allied token to deal 200% Attack.")
-	_i(&"mutagen_vial", "Mutagen Vial", 25, "artifact_f5_eggsoul", {"hp": 150}, "Keyword", {"factions": [&"magmar"], "keywords": [&"feast"]}, {"type": &"keyword", "keyword": &"grow"}, "Gains Grow.")
-	_i(&"zealots_chain", "Zealot's Chain", 25, "artifact_f4_darkstonering", {"atk": 12, "def": 4}, "Behaviour", {}, {"type": &"zealot"}, "Can't use PP. Each unspent PP becomes +3 Attack.")
-	_i(&"grafting_seed", "Grafting Seed", 25, "artifact_f5_morinkhur", {"hp": 150}, "Synergy", {"factions": [&"magmar"]}, {"type": &"flag", "flag": &"grow_atk", "value": 3}, "Grow gives +3 Attack instead of +2.")
-	_i(&"bone_charm", "Bone Charm", 25, "artifact_f4_hornofforsaken", {"atk": 8, "hp": 100}, "Synergy", {"keywords": [&"deathwatch"]}, {"type": &"flag", "flag": &"deathwatch_refund", "value": 3}, "Each Deathwatch trigger refunds 1 PP, up to 3 per battle.")
-	_i(&"mirror_blade", "Mirror Blade", 25, "artifact_f2_spellfan", {"atk": 12, "ini": 1}, "Synergy", {"factions": [&"songhai"]}, {"type": &"flag", "flag": &"kill_extra_action"}, "After a kill, takes an extra action at 50% damage.")
-	_i(&"glacier_heart", "Glacier Heart", 25, "artifact_f6_winterblade", {"atk": 10, "def": 5}, "Synergy", {"factions": [&"vanar"]}, {"type": &"flag", "flag": &"frozen_vuln", "value": 0.3}, "Frozen enemies take +30% damage from this unit.")
-	_i(&"sandglass", "Sandglass", 25, "artifact_f3_hexblade", {"hp": 120, "def": 8}, "Synergy", {"factions": [&"vetruvian"]}, {"type": &"flag", "flag": &"fortify_cap", "value": 0.6}, "Fortify stacks up to 60% instead of 40%.")
-	_i(&"battle_fury", "Battle Fury", 15, "artifact_f2_crescentspear", {"atk": 4}, "Passive", {}, {"type": &"flag", "flag": &"dmg_bonus", "value": 0.1}, "Deals +10% damage.")
-	_i(&"giant_slayer", "Giant Slayer", 25, "artifact_f4_spectralblade", {"atk": 8}, "Passive", {}, {"type": &"flag", "flag": &"pct_hp_damage", "value": 0.06}, "Hits also deal 6% of the target's max HP.")
-	_i(&"bulwark", "Bulwark", 25, "artifact_f1_shieldofphalanx", {"hp": 150}, "Passive", {}, {"type": &"flag", "flag": &"flat_dr", "value": 0.15}, "Takes 15% less damage.")
+	_i(&"iron_band", "Iron Band", 5, "artifact_f1_ironbanner", {"hp": 20}, {}, {"kw": {"regen": 1}}, "Regenerate 1.")
+	_i(&"whetstone", "Whetstone", 5, "artifact_f3_spinecleaver", {"atk": 5}, {}, {"kw": {"backstab": 1}}, "Backstab 1.")
+	_i(&"stone_skin", "Stone Skin", 5, "artifact_f5_irridiumscale", {}, {}, {"kw": {"tough": 1}}, "Tough 1.")
+	_i(&"quick_boots", "Quick Boots", 5, "artifact_f2_cyclonemask", {"ini": 2}, {}, {}, "+2 Speed.")
+	_i(&"hunters_eye", "Hunter's Eye", 5, "artifact_f2_maskofshadows", {"atk": 5}, {}, {"trig": [{"on": "bitemark", "once": true, "fx": [{"do": "status", "on": "target", "id": "vuln", "n": 1}]}]}, "First hit each fight makes the target Vulnerable.")
+	_i(&"taunting_horn", "Taunting Horn", 5, "artifact_f1_skywindglaives", {"hp": 40}, {"row": 0}, {"kw": {"taunt": 1}}, "Taunt.")
+	_i(&"focus_gem", "Focus Gem", 15, "artifact_f2_unboundedenergyamulet", {"atk": 5, "ap": 1}, {}, {}, "+1 AP.")
+	_i(&"prayer_bead", "Prayer Bead", 15, "artifact_f1_dawnseye", {"hp": 20, "pp": 1}, {}, {}, "+1 PP.")
+	_i(&"smoke_mask", "Smoke Mask", 15, "artifact_f3_sandscepter", {"ini": 1}, {}, {"kw": {"vanish": 1}}, "Vanish.")
+	_i(&"vampiric_fang", "Vampiric Fang", 15, "artifact_f2_bloodleechmask", {"atk": 5}, {}, {"kw": {"lifesteal": 1}}, "Lifesteal.")
+	_i(&"thorn_mail", "Thorn Mail", 15, "artifact_f6_frostplate", {"hp": 20}, {}, {"kw": {"tough": 1}, "trig": [{"on": "hit_taken", "fx": [{"do": "dmg", "on": "source", "n": 1}]}]}, "Tough 1. When hit, deals 5 damage back.")
+	_i(&"healing_charm", "Healing Charm", 15, "artifact_f3_repairstaff", {"hp": 40}, {}, {"acts": [_act("charm_heal", "Healing Charm", 1, "ally_lowest", [{"do": "heal", "n": 4}], {"cond": "ally_hurt", "text": "1 AP: heal the lowest ally 20."})]}, "Action (1 AP): heal the lowest ally 20.")
+	_i(&"riposte_blade", "Riposte Blade", 15, "artifact_f2_crescentspear", {"atk": 5}, {}, {"kw": {"strikeback": 1}}, "Strikeback.")
+	_i(&"bomb_satchel", "Bomb Satchel", 15, "artifact_f3_thunderclap", {"atk": 5}, {}, {"acts": [_act("bomb", "Bomb", 3, "foe_front_row", [{"do": "hit", "p": 0.7}], {"text": "3 AP: hit the enemy front row for 70% Attack."})]}, "Action (3 AP): hit the enemy front row for 70% Attack.")
+	_i(&"lion_crest", "Lion Crest", 15, "artifact_f1_bigshield", {"hp": 40}, {"row": 0}, {"kw": {"guard": 1}}, "Guard.")
+	_i(&"frost_shard", "Frost Shard", 15, "artifact_f6_frostbiter", {"atk": 5}, {"factions": [&"vanar", &"songhai"]}, {"kw": {"hit_chill": 1}}, "Hits apply Chill 1.")
+	_i(&"scarab_idol", "Scarab Idol", 15, "artifact_f3_staffofykir", {"hp": 20}, {"factions": [&"vetruvian", &"abyssian"]}, {"trig": [{"on": "warcry", "fx": [{"do": "summon", "tok": "scarab"}]}]}, "Warcry: summon a Scarab.")
+	_i(&"berserker_mask", "Berserker Mask", 15, "artifact_f2_markgorehorn", {"atk": 15}, {}, {"flags": {"berserk_target": 1}}, "Its attacks always go for the lowest-HP enemy it can reach.")
+	_i(&"cowards_cloak", "Coward's Cloak", 15, "artifact_f4_ghostazalea", {"hp": 20, "ini": 2}, {}, {"trig": [{"on": "below_half", "once": true, "fx": [{"do": "barrier", "on": "self"}]}]}, "The first time it drops below half HP, gains Barrier.")
+	_i(&"tower_shield", "Tower Shield", 15, "artifact_f1_shieldofphalanx", {}, {}, {"kw": {"tough": 1, "barrier_start": 1}}, "Tough 1. Starts each fight with Barrier.")
+	_i(&"blood_chalice", "Blood Chalice", 15, "artifact_f4_heartborrower", {"hp": 40}, {"factions": [&"abyssian"]}, {"trig": [{"on": "ally_died", "fx": [{"do": "souls", "n": 1}]}]}, "Whenever an ally dies, +1 Soul.")
+	_i(&"sun_lantern", "Sun Lantern", 15, "artifact_f1_sunstonebracers", {"hp": 20}, {"factions": [&"lyonar"]}, {"trig": [{"on": "turn", "every": 2, "fx": [{"do": "heal", "on": "row_allies", "n": 2}]}]}, "Every 2nd turn, heals its row 10.")
+	_i(&"titans_belt", "Titan's Belt", 25, "artifact_f5_adamantineclaws", {"hp": 80, "ini": -1}, {}, {"flags": {"immune_frozen": 1}}, "Can't be Frozen.")
+	_i(&"executioners_edge", "Executioner's Edge", 25, "artifact_f4_spectralblade", {"atk": 10}, {}, {"flags": {"execute": 2}}, "+10 damage to targets below 30% HP.")
+	_i(&"phoenix_feather", "Phoenix Feather", 25, "artifact_f5_eternalheart", {"hp": 40}, {}, {"kw": {"undying": 1}, "flags": {"undying_pct": 0.25}}, "Once per fight, survives a lethal hit at 25% HP.")
+	_i(&"ritual_dagger", "Ritual Dagger", 25, "artifact_f4_soulgrimwar", {"atk": 10}, {"factions": [&"abyssian"]}, {"acts": [_act("ritual", "Ritual", 1, "token_any", [{"do": "sacrifice", "then": [{"do": "hit", "on": "foe", "p": 2}]}], {"cond": "has_token", "text": "1 AP: sacrifice an allied token, then hit for 200% Attack."})]}, "Action (1 AP): sacrifice an allied token, then hit for 200% Attack.")
+	_i(&"mutagen_vial", "Mutagen Vial", 25, "artifact_f5_eggsoul", {"hp": 40}, {"factions": [&"magmar"]}, {"kw": {"grow": 1}}, "Grow 1.")
+	_i(&"zealots_chain", "Zealot's Chain", 25, "artifact_f4_darkstonering", {"atk": 10}, {}, {"kw": {"zeal": 1}}, "Zeal 1.")
+	_i(&"grafting_seed", "Grafting Seed", 25, "artifact_f5_morinkhur", {"hp": 40}, {"factions": [&"magmar"]}, {"kw": {"rebirth": 1}}, "Rebirth.")
+	_i(&"bone_charm", "Bone Charm", 25, "artifact_f4_hornofforsaken", {"atk": 5, "hp": 40}, {}, {"trig": [{"on": "deathwatch", "fx": [{"do": "buff", "on": "self", "stat": "atk", "n": 1}]}]}, "Deathwatch: +5 Attack.")
+	_i(&"mirror_blade", "Mirror Blade", 25, "artifact_f2_spellfan", {"atk": 10}, {"factions": [&"songhai"]}, {"trig": [{"on": "kill", "per_turn": 1, "fx": [{"do": "extra_action"}]}]}, "After a kill, takes an extra action (once per turn).")
+	_i(&"glacier_heart", "Glacier Heart", 25, "artifact_f6_winterblade", {"atk": 10}, {"factions": [&"vanar"]}, {"kw": {"frozen_bonus": 2}}, "+10 damage to Frozen enemies.")
+	_i(&"sandglass", "Sandglass", 25, "artifact_f3_hexblade", {"hp": 40}, {"factions": [&"vetruvian"]}, {"trig": [{"on": "warcry", "fx": [{"do": "stall_mod", "on": "self", "n": -1}]}]}, "Its Stall effects come 1 turn sooner.")
+	_i(&"battle_fury", "Battle Fury", 15, "artifact_f2_crescentspear", {"atk": 10}, {}, {}, "+10 Attack.")
+	_i(&"giant_slayer", "Giant Slayer", 25, "artifact_f4_spectralblade", {"atk": 5}, {}, {"flags": {"pct_hp": 0.06}}, "Hits also deal 6% of the target's max HP.")
+	_i(&"bulwark", "Bulwark", 25, "artifact_f1_shieldofphalanx", {"hp": 60}, {}, {"kw": {"tough": 2}}, "Tough 2.")
 
 
 static func meets_req(item: Dictionary, unit_def: Dictionary, keywords: Array, row: int = -1) -> bool:

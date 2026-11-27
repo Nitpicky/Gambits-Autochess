@@ -10,3 +10,4 @@
 - 2026-11-24: Created.
 - 2026-11-24: Deepen gives flat HP/Attack.
 - 2026-11-24: Units with a kit offer their 3 hand-written upgrades (Kits.upgrades) instead of the generic cards.
+- 2026-11-27: Cards are the unit's 3 rank-ups from the roster (generic Deepen/Bridge/Subvert removed).

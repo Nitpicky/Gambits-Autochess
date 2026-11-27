@@ -41,20 +41,21 @@ static func archetype_bias(p: PlayerState) -> Dictionary:
 static func offer_archetypes(kind: StringName, id: StringName) -> Array[StringName]:
 	match kind:
 		&"unit":
-			return Keywords.archetypes_of_keywords(UnitCatalog.get_def(id).keywords)
+			var fac: StringName = UnitCatalog.get_def(id).faction
+			return [fac] if Keywords.ARCHETYPES.has(fac) else []
 		&"item":
 			var it := ItemCatalog.get_def(id)
-			var kws: Array = it.req.get("keywords", []).duplicate()
-			if it.effect.get("type", &"") == &"keyword":
-				kws.append(it.effect.keyword)
+			var out: Array[StringName] = []
 			for f in it.req.get("factions", []):
-				kws.append_array(Keywords.faction_keywords(f))
-			return Keywords.archetypes_of_keywords(kws)
+				if Keywords.ARCHETYPES.has(f):
+					out.append(f)
+			return out
 		&"relic":
 			var r := RelicCatalog.get_def(id)
-			if r.needs.is_empty():
+			var f: StringName = r.effect.get("faction", &"")
+			if f == &"":
 				return []
-			return Keywords.archetypes_of_keywords(Keywords.faction_keywords(r.needs.faction))
+			return [f]
 	return []
 
 

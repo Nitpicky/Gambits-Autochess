@@ -76,34 +76,55 @@ const DRAW_DAMAGE := 2
 
 # Upgrades / champions
 const MAX_UPGRADE_LEVEL := 1
-const UPGRADE_HP := 50     ## flat per upgrade level (stat increases are flat, never %)
-const UPGRADE_ATK := 4
+const UPGRADE_HP := 20     ## flat per upgrade level (stat increases are flat, never %)
+const UPGRADE_ATK := 5
 const CHAMPION_SELL := 30
 const CHAMPION_SKIP_GOLD := 20
 
-# Stat scale: HP comes in steps of HP_STEP (Overwatch-style bars, one segment per step).
-const HP_STEP := 25
-const HP_SCALE := 0.25    ## catalog HP numbers are multiplied by this, then rounded to HP_STEP
-const ATK_SCALE := 0.25   ## catalog Attack / Defense numbers are multiplied by this, then rounded
+# Stat scale: the roster's stats are 1..9 points; game numbers = points x unit.
+const HP_UNIT := 20.0      ## HP per HP point (and per "+X HP" in kit texts)
+const ATK_UNIT := 5.0      ## Attack per Attack point (and per "+X Attack")
+const HP_STEP := 20        ## HP bar segment size (Overwatch-style bars, one segment per step)
+const HP_SCALE := 0.25     ## PROTOTYPE: old item numbers x this
+const ATK_SCALE := 0.25
 
-# Flat buffs (formerly % buffs)
-const RALLY_ATK := 2
-const GROW_ATK := 2
-const GROW_HP := 0         ## max-HP buffs must stay multiples of HP_STEP
-const RUIN_ATK := 1
-const CHILL_SPEED := 1     ## Speed lost per Chill stack
-const ZEALOT_ATK := 3      ## Attack per unspent PP
+# Keyword numbers (each "X" of a keyword is worth this many game points)
+const AP_MAX := 3
+const PP_MAX := 2
+const START_AP := 0
+const START_PP := 1
+const AP_PER_TURN := 1
+const PP_PER_TURN := 1
+const TOUGH_UNIT := 3.0     ## damage removed per Tough
+const WEAKEN_UNIT := 3.0    ## damage removed per Weaken stack
+const DMG_UNIT := 5.0       ## "deal X damage"
+const HEAL_BASE := 10.0     ## a plain heal = HEAL_BASE + healer's Attack
+const HEAL_UNIT := 5.0      ## "heal X"
+const REGEN_UNIT := 5.0
+const CREEP_UNIT := 5.0
+const CURSE_PCT := 0.05     ## of max HP per Curse stack, at the end of its turns
+const VULN_BONUS := 5.0
+const GROW_HP_UNIT := 10.0  ## Grow: +1 Attack point and this much HP per X
+const PUSH_UNIT := 5.0      ## damage when a push is blocked
+const OVERHEAL_PER_TOUGH := 10.0
+const FEARLESS_ATK := 1.0   ## Attack points in the front row
+const SWIFT_INI := 100.0
+const REBIRTH_PCT := 0.5
+const FREEZE_AT := 3        ## Chill stacks that turn into Frozen
+const HURT_RATIO := 0.7     ## "hurt ally" for heal conditions
+const SACRIFICE_BELOW := 0.35
+const MIN_DAMAGE := 1.0
 
 # Battle
 const MAX_BATTLE_CYCLES := 30  ## AP/PP refill cycles: fights go on until a side is wiped; this is only a stalemate guard
-const MAX_BATTLE_TURNS := 200  ## stalemate guard only
+const MAX_BATTLE_TURNS := 40  ## rounds; stalemate guard only
 ## Fight timer: FIGHT_SECONDS of playback (speed 1). The sim keeps the same clock from EVENT_SECONDS.
 ## Past it (from the next turn), healing is cut and every hit ignores damage reduction and grows by
 ## OVERTIME_DMG_STEP per overtime turn. Playback speeds up per action.
-const FIGHT_SECONDS := 20.0
+const FIGHT_SECONDS := 45.0
 ## Playback seconds per battle log event (the UI waits this long; the sim's fight clock adds them up).
 const EVENT_SECONDS := {"start": 0.8, "act": 0.45, "hit": 0.5, "heal": 0.45, "blocked": 0.45, "buff": 0.3,
-	"status": 0.25, "death": 0.6, "summon": 0.35, "move": 0.3, "cycle": 0.5, "overtime": 0.3, "end": 0.6}
+	"status": 0.25, "death": 0.6, "summon": 0.35, "move": 0.3, "cycle": 0.5, "transform": 0.5, "turn": 0.0, "timeout": 0.0, "overtime": 0.3, "end": 0.6}
 const OVERTIME_HEAL_MULT := 0.25
 const OVERTIME_DMG_STEP := 0.3
 const OVERTIME_SPEEDUP := 0.08   ## playback speed +8% per action in overtime
